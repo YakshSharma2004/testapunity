@@ -1,4 +1,4 @@
-﻿namespace testapi1.models
+﻿namespace testapi1.Contracts
 {
     public class DialogueRequest
     {

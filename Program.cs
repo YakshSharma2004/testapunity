@@ -1,42 +1,39 @@
-using testapi1.models;
+using Serilog;
+using testapi1.Application;   // interfaces namespace (adjust if needed)
+using testapi1.processes;
+using testapi1.Services;      // implementations namespace (adjust if needed)
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Serilog (read config)
+builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
+// CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("UnityCors", policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
+// DI: interface in Application, implementation in Services
+builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// IMPORTANT: CORS must be before MapControllers
+app.UseCors("UnityCors");
 
-app.UseHttpsRedirection();
+// For LAN dev: DO NOT force https redirect (it often breaks Unity calls)
+// app.UseHttpsRedirection();
 
+app.UseSerilogRequestLogging();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapPost("/api/dialogue", (DialogueRequest req) =>
-{
-    if (string.IsNullOrWhiteSpace(req.playerText))
-        return Results.BadRequest("playerText is required.");
-
-    var reply = $"Echo Player '{req.playerId}' said: '{req.playerText}' " +
-                $"to NPC '{req.npcId}' at '{req.inGameTime}'";
-
-    return Results.Ok(new DialogueResponse
-    {
-        replyText = reply,
-        conversationId = Guid.NewGuid().ToString("N")
-    });
-});
-
 
 app.Run();
