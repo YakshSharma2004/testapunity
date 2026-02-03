@@ -24,6 +24,8 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.AddSingleton<IIntentClassifier, IntentClassifier>();
 builder.Services.AddSingleton<ILLMService, LlmService>();
+builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
+builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 
 var app = builder.Build();
 
