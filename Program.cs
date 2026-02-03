@@ -22,6 +22,8 @@ builder.Services.AddCors(options =>
 
 // DI: interface in Application, implementation in Services
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
+builder.Services.AddSingleton<IIntentClassifier, IntentClassifier>();
+builder.Services.AddSingleton<ILLMService, LlmService>();
 
 var app = builder.Build();
 
