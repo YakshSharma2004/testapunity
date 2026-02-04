@@ -1,7 +1,8 @@
 using System;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using testapi1.Application;
@@ -12,33 +13,30 @@ namespace testapi1.Services
     public class CachedLlmService : ILLMService
     {
         private readonly ILLMService _inner;
-        private readonly IMemoryCache _cache;
+        private readonly IDistributedCache _cache;
         private readonly ITextNormalizer _textNormalizer;
         private readonly IOptionsMonitor<ApiCacheOptions> _optionsMonitor;
-        private readonly ICacheInvalidationTokenSource _invalidationTokenSource;
         private readonly ILogger<CachedLlmService> _logger;
 
         public CachedLlmService(
             ILLMService inner,
-            IMemoryCache cache,
+            IDistributedCache cache,
             ITextNormalizer textNormalizer,
             IOptionsMonitor<ApiCacheOptions> optionsMonitor,
-            ICacheInvalidationTokenSource invalidationTokenSource,
             ILogger<CachedLlmService> logger)
         {
             _inner = inner;
             _cache = cache;
             _textNormalizer = textNormalizer;
             _optionsMonitor = optionsMonitor;
-            _invalidationTokenSource = invalidationTokenSource;
             _logger = logger;
         }
 
-        public Task<LlmRawResponse> GenerateResponseAsync(LlmPromptPayload payload, CancellationToken cancellationToken = default)
+        public async Task<LlmRawResponse> GenerateResponseAsync(LlmPromptPayload payload, CancellationToken cancellationToken = default)
         {
             if (payload == null)
             {
-                return _inner.GenerateResponseAsync(payload, cancellationToken);
+                return await _inner.GenerateResponseAsync(payload, cancellationToken);
             }
 
             var normalized = _textNormalizer.NormalizeForMatch(payload.promptText);
@@ -49,14 +47,23 @@ namespace testapi1.Services
             var modelVersion = _optionsMonitor.CurrentValue.ModelVersion ?? "";
             var cacheKey = $"llm:{modelVersion}:{normalized}:{npcKey}:{contextKey}:{conversationKey}:{systemContextKey}:{payload.maxTokens}";
 
-            return _cache.GetOrCreateAsync(cacheKey, entry =>
+            var cachedValue = await _cache.GetStringAsync(cacheKey, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(cachedValue))
             {
-                var ttlSeconds = _optionsMonitor.CurrentValue.LlmTtlSeconds;
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds);
-                entry.AddExpirationToken(_invalidationTokenSource.GetChangeToken());
-                _logger.LogDebug("Caching LLM response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
-                return _inner.GenerateResponseAsync(payload, cancellationToken);
-            });
+                _logger.LogDebug("LLM cache hit for key {CacheKey}", cacheKey);
+                return JsonSerializer.Deserialize<LlmRawResponse>(cachedValue) ?? new LlmRawResponse();
+            }
+
+            var response = await _inner.GenerateResponseAsync(payload, cancellationToken);
+            var ttlSeconds = _optionsMonitor.CurrentValue.LlmTtlSeconds;
+            var cacheOptions = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds)
+            };
+            var serialized = JsonSerializer.Serialize(response);
+            await _cache.SetStringAsync(cacheKey, serialized, cacheOptions, cancellationToken);
+            _logger.LogDebug("Caching LLM response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
+            return response;
         }
     }
 }

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -12,7 +12,11 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddMemoryCache();
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+    options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
+});
 
 // CORS
 builder.Services.AddCors(options =>
@@ -26,24 +30,21 @@ builder.Services.AddCors(options =>
 // DI: interface in Application, implementation in Services
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("ApiCache"));
-builder.Services.AddSingleton<ICacheInvalidationTokenSource, CacheInvalidationTokenSource>();
 builder.Services.AddSingleton<IntentClassifier>();
 builder.Services.AddSingleton<IIntentClassifier>(sp =>
     new CachedIntentClassifier(
         sp.GetRequiredService<IntentClassifier>(),
-        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<IDistributedCache>(),
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
-        sp.GetRequiredService<ICacheInvalidationTokenSource>(),
         sp.GetRequiredService<ILogger<CachedIntentClassifier>>()));
 builder.Services.AddSingleton<LlmService>();
 builder.Services.AddSingleton<ILLMService>(sp =>
     new CachedLlmService(
         sp.GetRequiredService<LlmService>(),
-        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<IDistributedCache>(),
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
-        sp.GetRequiredService<ICacheInvalidationTokenSource>(),
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();

@@ -1,5 +1,27 @@
 # testapi1
 
+## Redis cache setup
+This API uses Redis for caching intent and LLM responses. Configure the connection string via
+`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`. Defaults
+are included in `appsettings.json` for local development.
+
+### Local Redis with Docker
+```bash
+docker run --name testapi1-redis -p 6379:6379 -d redis:7
+```
+
+If you need to connect to a different host/port, update `appsettings.Development.json`:
+```json
+{
+  "ConnectionStrings": {
+    "Redis": "localhost:6379"
+  },
+  "Redis": {
+    "InstanceName": "testapi1:"
+  }
+}
+```
+
 ## ONNX Runtime integration (no Python runtime needed)
 
 This service is set up to load and run ONNX models directly in .NET using **Microsoft.ML.OnnxRuntime**. You only need to export your Python model to `.onnx`, drop it into the repo (or a mounted volume), and point the app to the file. The rest of the preprocessing and postprocessing stays in .NET.
