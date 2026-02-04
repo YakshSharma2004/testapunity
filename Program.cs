@@ -1,3 +1,6 @@
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Serilog;
 using testapi1.Application;   // interfaces namespace (adjust if needed)
 using testapi1.Services;      // implementations namespace (adjust if needed)
@@ -9,6 +12,7 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddMemoryCache();
 
 // CORS
 builder.Services.AddCors(options =>
@@ -21,8 +25,26 @@ builder.Services.AddCors(options =>
 
 // DI: interface in Application, implementation in Services
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
-builder.Services.AddSingleton<IIntentClassifier, IntentClassifier>();
-builder.Services.AddSingleton<ILLMService, LlmService>();
+builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("ApiCache"));
+builder.Services.AddSingleton<ICacheInvalidationTokenSource, CacheInvalidationTokenSource>();
+builder.Services.AddSingleton<IntentClassifier>();
+builder.Services.AddSingleton<IIntentClassifier>(sp =>
+    new CachedIntentClassifier(
+        sp.GetRequiredService<IntentClassifier>(),
+        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<ITextNormalizer>(),
+        sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
+        sp.GetRequiredService<ICacheInvalidationTokenSource>(),
+        sp.GetRequiredService<ILogger<CachedIntentClassifier>>()));
+builder.Services.AddSingleton<LlmService>();
+builder.Services.AddSingleton<ILLMService>(sp =>
+    new CachedLlmService(
+        sp.GetRequiredService<LlmService>(),
+        sp.GetRequiredService<IMemoryCache>(),
+        sp.GetRequiredService<ITextNormalizer>(),
+        sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
+        sp.GetRequiredService<ICacheInvalidationTokenSource>(),
+        sp.GetRequiredService<ILogger<CachedLlmService>>()));
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 
