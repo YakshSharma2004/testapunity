@@ -1,6 +1,131 @@
-﻿namespace testapi1.Infrastructure
+﻿using System.Net.Http.Json;
+using System.Text.Json;
+
+namespace testapi1.Infrastructure
 {
-    public class VectorDbStore
+    public sealed class VectorDbStore : IVectorStore
     {
+        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+        private readonly HttpClient _httpClient;
+        private readonly QdrantOptions _options;
+
+        public VectorDbStore(HttpClient httpClient, QdrantOptions options)
+        {
+            _httpClient = httpClient;
+            _options = options;
+        }
+
+        public async Task UpsertEmbeddings(IReadOnlyCollection<VectorRecord> records, CancellationToken cancellationToken = default)
+        {
+            if (records.Count == 0)
+            {
+                return;
+            }
+
+            var payload = new QdrantUpsertRequest(
+                records.Select(record => new QdrantPoint(
+                    record.Id,
+                    record.Embedding,
+                    BuildPayload(record))).ToList());
+
+            var response = await _httpClient.PostAsJsonAsync(
+                $"collections/{_options.CollectionName}/points?wait=true",
+                payload,
+                JsonOptions,
+                cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        public async Task<IReadOnlyList<VectorSearchResult>> QuerySimilar(float[] embedding, int limit, CancellationToken cancellationToken = default)
+        {
+            var payload = new QdrantSearchRequest(
+                embedding,
+                limit,
+                true);
+
+            var response = await _httpClient.PostAsJsonAsync(
+                $"collections/{_options.CollectionName}/points/search",
+                payload,
+                JsonOptions,
+                cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+
+            var data = await response.Content.ReadFromJsonAsync<QdrantSearchResponse>(JsonOptions, cancellationToken);
+            if (data?.Result is null)
+            {
+                return Array.Empty<VectorSearchResult>();
+            }
+
+            return data.Result
+                .Select(item => new VectorSearchResult(
+                    item.Id,
+                    ExtractIntentId(item.Payload),
+                    item.Score,
+                    item.Payload))
+                .ToList();
+        }
+
+        public async Task DeleteByIntentId(string intentId, CancellationToken cancellationToken = default)
+        {
+            var payload = new QdrantDeleteRequest(
+                new QdrantFilter(
+                    new List<QdrantCondition>
+                    {
+                        new("intentId", new QdrantMatch(intentId))
+                    }));
+
+            var response = await _httpClient.PostAsJsonAsync(
+                $"collections/{_options.CollectionName}/points/delete?wait=true",
+                payload,
+                JsonOptions,
+                cancellationToken);
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        private static Dictionary<string, object> BuildPayload(VectorRecord record)
+        {
+            var payload = record.Metadata is not null
+                ? new Dictionary<string, object>(record.Metadata)
+                : new Dictionary<string, object>();
+
+            payload["intentId"] = record.IntentId;
+            return payload;
+        }
+
+        private static string ExtractIntentId(IReadOnlyDictionary<string, object>? payload)
+        {
+            if (payload is null)
+            {
+                return string.Empty;
+            }
+
+            return payload.TryGetValue("intentId", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
+        }
     }
+
+    public sealed record QdrantOptions(string BaseUrl, string CollectionName)
+    {
+        public Uri GetBaseUri() => new(BaseUrl.TrimEnd('/') + "/");
+    }
+
+    public sealed record QdrantPoint(string Id, float[] Vector, IReadOnlyDictionary<string, object> Payload);
+
+    public sealed record QdrantUpsertRequest(IReadOnlyCollection<QdrantPoint> Points);
+
+    public sealed record QdrantSearchRequest(float[] Vector, int Limit, bool WithPayload);
+
+    public sealed record QdrantSearchResponse(IReadOnlyList<QdrantSearchResult> Result);
+
+    public sealed record QdrantSearchResult(string Id, double Score, IReadOnlyDictionary<string, object>? Payload);
+
+    public sealed record QdrantDeleteRequest(QdrantFilter Filter);
+
+    public sealed record QdrantFilter(IReadOnlyList<QdrantCondition> Must);
+
+    public sealed record QdrantCondition(string Key, QdrantMatch Match);
+
+    public sealed record QdrantMatch(string Value);
 }
