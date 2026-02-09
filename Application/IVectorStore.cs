@@ -1,9 +1,7 @@
-using System.Collections.Generic;
+﻿using testapi1.Infrastructure.VectorStores;
 using System.Threading;
 using System.Threading.Tasks;
-using testapi1.Infrastructure;
-
-namespace testapi1.Application
+namespace testapi1.Infrastructure
 {
     public interface IVectorStore
     {
