@@ -1,4 +1,6 @@
-﻿namespace testapi1.Infrastructure
+﻿using testapi1.Application;
+
+namespace testapi1.Infrastructure
 {
     public sealed class InMemoryVectorStore : IVectorStore
     {
