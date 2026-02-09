@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using testapi1.Application;   // interfaces namespace (adjust if needed)
 using testapi1.Services;      // implementations namespace (adjust if needed)
+using testapi1.Services.Caching;
 
 var builder = WebApplication.CreateBuilder(args);
 

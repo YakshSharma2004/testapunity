@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 using testapi1.Application;
 using testapi1.Contracts;
 
-namespace testapi1.Services
+namespace testapi1.Services.Caching
 {
     public class CachedIntentClassifier : IIntentClassifier
     {

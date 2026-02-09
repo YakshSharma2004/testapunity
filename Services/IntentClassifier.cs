@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using testapi1.Application;
 using testapi1.Contracts;
+using testapi1.Services.Caching;
 
 namespace testapi1.Services
 {
