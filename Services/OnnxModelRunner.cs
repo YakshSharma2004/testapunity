@@ -36,7 +36,7 @@ namespace testapi1.Services
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var results = _session.Value.Run(CreateInputs(inputs));
+            using var results = _session.Value.Run((IReadOnlyCollection<NamedOnnxValue>)CreateInputs(inputs));
             var outputMap = new Dictionary<string, Tensor<float>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var result in results)
