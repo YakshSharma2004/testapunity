@@ -1,4 +1,6 @@
-﻿namespace testapi1.Infrastructure
+﻿using testapi1.Infrastructure.VectorStores;
+
+namespace testapi1.Infrastructure
 {
     public interface IVectorStore
     {
