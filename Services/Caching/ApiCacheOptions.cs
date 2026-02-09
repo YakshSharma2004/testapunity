@@ -1,4 +1,4 @@
-namespace testapi1.Services
+namespace testapi1.Services.Caching
 {
     public class ApiCacheOptions
     {
