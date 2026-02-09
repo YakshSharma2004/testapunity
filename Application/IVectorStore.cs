@@ -1,5 +1,6 @@
 ﻿using testapi1.Infrastructure.VectorStores;
-
+using System.Threading;
+using System.Threading.Tasks;
 namespace testapi1.Infrastructure
 {
     public interface IVectorStore
