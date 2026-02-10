@@ -45,22 +45,41 @@ namespace testapi1.Services.Caching
             var modelVersion = _optionsMonitor.CurrentValue.ModelVersion ?? "";
             var cacheKey = $"intent:{modelVersion}:{normalized}:{npcKey}:{contextKey}";
 
-            var cachedValue = await _cache.GetStringAsync(cacheKey, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(cachedValue))
+            try
             {
-                _logger.LogDebug("Intent cache hit for key {CacheKey}", cacheKey);
-                return JsonSerializer.Deserialize<IntentResponse>(cachedValue) ?? new IntentResponse();
+                var cachedValue = await _cache.GetStringAsync(cacheKey, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(cachedValue))
+                {
+                    _logger.LogDebug("Intent cache hit for key {CacheKey}", cacheKey);
+                    return JsonSerializer.Deserialize<IntentResponse>(cachedValue) ?? new IntentResponse();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Intent cache get failed for key {CacheKey}. Falling back to classifier.", cacheKey);
             }
 
             var response = await _inner.ClassifyAsync(request, cancellationToken);
             var ttlSeconds = _optionsMonitor.CurrentValue.IntentTtlSeconds;
-            var cacheOptions = new DistributedCacheEntryOptions
+
+            if (ttlSeconds > 0)
             {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds)
-            };
-            var serialized = JsonSerializer.Serialize(response);
-            await _cache.SetStringAsync(cacheKey, serialized, cacheOptions, cancellationToken);
-            _logger.LogDebug("Caching intent response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
+                try
+                {
+                    var cacheOptions = new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds)
+                    };
+                    var serialized = JsonSerializer.Serialize(response);
+                    await _cache.SetStringAsync(cacheKey, serialized, cacheOptions, cancellationToken);
+                    _logger.LogDebug("Caching intent response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Intent cache set failed for key {CacheKey}. Returning classifier result.", cacheKey);
+                }
+            }
+
             return response;
         }
     }
