@@ -47,22 +47,41 @@ namespace testapi1.Services.Caching
             var modelVersion = _optionsMonitor.CurrentValue.ModelVersion ?? "";
             var cacheKey = $"llm:{modelVersion}:{normalized}:{npcKey}:{contextKey}:{conversationKey}:{systemContextKey}:{payload.maxTokens}";
 
-            var cachedValue = await _cache.GetStringAsync(cacheKey, cancellationToken);
-            if (!string.IsNullOrWhiteSpace(cachedValue))
+            try
             {
-                _logger.LogDebug("LLM cache hit for key {CacheKey}", cacheKey);
-                return JsonSerializer.Deserialize<LlmRawResponse>(cachedValue) ?? new LlmRawResponse();
+                var cachedValue = await _cache.GetStringAsync(cacheKey, cancellationToken);
+                if (!string.IsNullOrWhiteSpace(cachedValue))
+                {
+                    _logger.LogDebug("LLM cache hit for key {CacheKey}", cacheKey);
+                    return JsonSerializer.Deserialize<LlmRawResponse>(cachedValue) ?? new LlmRawResponse();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "LLM cache get failed for key {CacheKey}. Falling back to LLM service.", cacheKey);
             }
 
             var response = await _inner.GenerateResponseAsync(payload, cancellationToken);
             var ttlSeconds = _optionsMonitor.CurrentValue.LlmTtlSeconds;
-            var cacheOptions = new DistributedCacheEntryOptions
+
+            if (ttlSeconds > 0)
             {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds)
-            };
-            var serialized = JsonSerializer.Serialize(response);
-            await _cache.SetStringAsync(cacheKey, serialized, cacheOptions, cancellationToken);
-            _logger.LogDebug("Caching LLM response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
+                try
+                {
+                    var cacheOptions = new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ttlSeconds)
+                    };
+                    var serialized = JsonSerializer.Serialize(response);
+                    await _cache.SetStringAsync(cacheKey, serialized, cacheOptions, cancellationToken);
+                    _logger.LogDebug("Caching LLM response for key {CacheKey} with TTL {TtlSeconds}s", cacheKey, ttlSeconds);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "LLM cache set failed for key {CacheKey}. Returning LLM response.", cacheKey);
+                }
+            }
+
             return response;
         }
     }
