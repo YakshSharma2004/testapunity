@@ -36,7 +36,8 @@ namespace testapi1.Services
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            using var results = _session.Value.Run((IReadOnlyCollection<NamedOnnxValue>)CreateInputs(inputs));
+            var onnxInputs = CreateInputs(inputs).ToList();
+            using var results = _session.Value.Run(onnxInputs);
             var outputMap = new Dictionary<string, Tensor<float>>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var result in results)
@@ -74,7 +75,7 @@ namespace testapi1.Services
             }
 
             _logger.LogInformation("Loading ONNX model from {ModelPath}", _options.ModelPath);
-            var sessionOptions = new SessionOptions
+            var sessionOptions = new Microsoft.ML.OnnxRuntime.SessionOptions
             {
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };

@@ -1,4 +1,4 @@
-﻿using testapi1.Infrastructure;
+﻿using testapi1.Application;
 
 namespace testapi1.Infrastructure.VectorStores
 {

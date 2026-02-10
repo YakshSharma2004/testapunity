@@ -60,10 +60,9 @@ builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 
 var app = builder.Build();
 
-// IMPORTANT: CORS must be before MapControllers
-app.UseCors("UnityCors");
 
-// For LAN dev: DO NOT force https redirect (it often breaks Unity calls)
+app.UseCors("UnityCors");
+//dont use
 // app.UseHttpsRedirection();
 
 app.UseSerilogRequestLogging();
