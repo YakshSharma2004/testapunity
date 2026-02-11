@@ -11,15 +11,17 @@ namespace testapi1.Controllers
     {
         private readonly ITextNormalizer _normalizer;
         private readonly ILogger<DialogueController> _logger;
-        public DialogueController(ITextNormalizer normalizer, ILogger<DialogueController> logger)
+        private readonly IEmbeddingService _embeddingService;
+        public DialogueController(ITextNormalizer normalizer, ILogger<DialogueController> logger, IEmbeddingService embeddingService)
         {
             _normalizer = normalizer;
             _logger = logger;
+            _embeddingService = embeddingService;
         }
         [HttpPost("normalise")]
         public ActionResult<DialogueResponse> Post([FromBody] DialogueRequest req)
         {
-            if (req == null || string.IsNullOrWhiteSpace(req.playerText)) 
+            if (req == null || string.IsNullOrWhiteSpace(req.playerText))
                 return BadRequest("playerText is required.");
             var normalisedText = _normalizer.NormalizeForMatch(req.playerText);
             _logger.LogDebug("Normalized text for player {PlayerId}: {NormalizedText}", req.playerId, normalisedText);
@@ -30,5 +32,20 @@ namespace testapi1.Controllers
                 conversationId = Guid.NewGuid().ToString("N")
             });
         }
+
+        [HttpPost("embed")]
+        public async Task<IActionResult> Embed([FromBody] DialogueRequest req, CancellationToken ct)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.playerText))
+                return BadRequest("playerText is required.");
+
+            var vec = await _embeddingService.EmbedAsync(req.playerText, ct);
+
+            return Ok(new
+            {
+                dims = vec.Length,
+                preview = vec.Take(8).ToArray()
+            });
+        }
     }
-}
+    }

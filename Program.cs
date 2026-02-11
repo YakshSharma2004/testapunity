@@ -57,6 +57,7 @@ builder.Services.AddSingleton<ILLMService>(sp =>
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
+builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
 var app = builder.Build();
 
