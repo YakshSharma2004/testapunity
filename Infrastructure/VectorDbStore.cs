@@ -1,5 +1,7 @@
-﻿using System.Net.Http.Json;
+﻿using Microsoft.Extensions.Options;
+using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace testapi1.Infrastructure
 {
@@ -9,10 +11,17 @@ namespace testapi1.Infrastructure
         private readonly HttpClient _httpClient;
         private readonly QdrantOptions _options;
 
-        public VectorDbStore(HttpClient httpClient, QdrantOptions options)
+        public VectorDbStore(HttpClient httpClient, IOptions<QdrantOptions> options)
         {
             _httpClient = httpClient;
-            _options = options;
+            _options = options.Value;
+
+            _httpClient.BaseAddress = _options.GetBaseUri();
+
+            if (!string.IsNullOrEmpty(_options.ApiKey))
+            {
+                _httpClient.DefaultRequestHeaders.TryAddWithoutValidation("api-key", _options.ApiKey);
+            }
         }
 
         public async Task UpsertEmbeddings(IReadOnlyCollection<VectorRecord> records, CancellationToken cancellationToken = default)
@@ -22,13 +31,14 @@ namespace testapi1.Infrastructure
                 return;
             }
 
-            var payload = new QdrantUpsertRequest(
-                records.Select(record => new QdrantPoint(
-                    record.Id,
-                    record.Embedding,
-                    BuildPayload(record))).ToList());
+            var points = records.Select(record => new QdrantPoint(
+                record.Id,
+                record.Embedding,
+                BuildPayload(record))).ToList();
 
-            var response = await _httpClient.PostAsJsonAsync(
+            var payload = new QdrantUpsertRequest(points);
+
+            var response = await _httpClient.PutAsJsonAsync(
                 $"collections/{_options.CollectionName}/points?wait=true",
                 payload,
                 JsonOptions,
@@ -39,10 +49,7 @@ namespace testapi1.Infrastructure
 
         public async Task<IReadOnlyList<VectorSearchResult>> QuerySimilar(float[] embedding, int limit, CancellationToken cancellationToken = default)
         {
-            var payload = new QdrantSearchRequest(
-                embedding,
-                limit,
-                true);
+            var payload = new QdrantSearchRequest(embedding, limit, true);
 
             var response = await _httpClient.PostAsJsonAsync(
                 $"collections/{_options.CollectionName}/points/search",
@@ -69,12 +76,9 @@ namespace testapi1.Infrastructure
 
         public async Task DeleteByIntentId(string intentId, CancellationToken cancellationToken = default)
         {
-            var payload = new QdrantDeleteRequest(
-                new QdrantFilter(
-                    new List<QdrantCondition>
-                    {
-                        new("intentId", new QdrantMatch(intentId))
-                    }));
+            var condition = new QdrantCondition("intentId", new QdrantMatch(intentId));
+            var filter = new QdrantFilter(new[] { condition });
+            var payload = new QdrantDeleteRequest(filter);
 
             var response = await _httpClient.PostAsJsonAsync(
                 $"collections/{_options.CollectionName}/points/delete?wait=true",
@@ -97,35 +101,44 @@ namespace testapi1.Infrastructure
 
         private static string ExtractIntentId(IReadOnlyDictionary<string, object>? payload)
         {
-            if (payload is null)
-            {
-                return string.Empty;
-            }
-
+            if (payload is null) return string.Empty;
             return payload.TryGetValue("intentId", out var value) ? value?.ToString() ?? string.Empty : string.Empty;
         }
     }
 
-    public sealed record QdrantOptions(string BaseUrl, string CollectionName)
-    {
-        public Uri GetBaseUri() => new(BaseUrl.TrimEnd('/') + "/");
-    }
+    // -------- Qdrant DTOs with proper JSON naming --------
 
-    public sealed record QdrantPoint(string Id, float[] Vector, IReadOnlyDictionary<string, object> Payload);
+    public sealed record QdrantPoint(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("vector")] float[] Vector,
+        [property: JsonPropertyName("payload")] IReadOnlyDictionary<string, object> Payload);
 
-    public sealed record QdrantUpsertRequest(IReadOnlyCollection<QdrantPoint> Points);
+    public sealed record QdrantUpsertRequest(
+        [property: JsonPropertyName("points")] IReadOnlyCollection<QdrantPoint> Points);
 
-    public sealed record QdrantSearchRequest(float[] Vector, int Limit, bool WithPayload);
+    public sealed record QdrantSearchRequest(
+        [property: JsonPropertyName("vector")] float[] Vector,
+        [property: JsonPropertyName("limit")] int Limit,
+        [property: JsonPropertyName("with_payload")] bool WithPayload);
 
-    public sealed record QdrantSearchResponse(IReadOnlyList<QdrantSearchResult> Result);
+    public sealed record QdrantSearchResponse(
+        [property: JsonPropertyName("result")] IReadOnlyList<QdrantSearchResult> Result);
 
-    public sealed record QdrantSearchResult(string Id, double Score, IReadOnlyDictionary<string, object>? Payload);
+    public sealed record QdrantSearchResult(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("score")] double Score,
+        [property: JsonPropertyName("payload")] IReadOnlyDictionary<string, object>? Payload);
 
-    public sealed record QdrantDeleteRequest(QdrantFilter Filter);
+    public sealed record QdrantDeleteRequest(
+        [property: JsonPropertyName("filter")] QdrantFilter Filter);
 
-    public sealed record QdrantFilter(IReadOnlyList<QdrantCondition> Must);
+    public sealed record QdrantFilter(
+        [property: JsonPropertyName("must")] IReadOnlyList<QdrantCondition> Must);
 
-    public sealed record QdrantCondition(string Key, QdrantMatch Match);
+    public sealed record QdrantCondition(
+        [property: JsonPropertyName("key")] string Key,
+        [property: JsonPropertyName("match")] QdrantMatch Match);
 
-    public sealed record QdrantMatch(string Value);
+    public sealed record QdrantMatch(
+        [property: JsonPropertyName("value")] string Value);
 }

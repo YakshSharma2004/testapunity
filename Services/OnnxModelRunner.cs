@@ -74,7 +74,7 @@ namespace testapi1.Services
             }
 
             _logger.LogInformation("Loading ONNX model from {ModelPath}", _options.ModelPath);
-            var sessionOptions = new SessionOptions
+            var sessionOptions = new Microsoft.ML.OnnxRuntime.SessionOptions
             {
                 GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
             };
