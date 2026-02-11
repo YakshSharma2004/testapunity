@@ -72,3 +72,31 @@ var logits = outputs["logits"];
 ### 5) GPU (optional later)
 
 If you want GPU acceleration, swap the runtime package to the GPU variant and update `SessionOptions` accordingly. Start with CPU first to validate correctness.
+
+## Intent classification POC (seeded cosine similarity)
+
+This project now supports a seeded intent classification proof-of-concept:
+
+- On startup, a hosted service embeds fixed seed utterances and upserts them into the configured `IVectorStore`.
+- The classifier embeds user text, runs top-k similarity search, and picks the highest-scoring intent.
+- A confidence threshold allows fallback to `unknown` for low-similarity queries.
+
+### Configuration
+
+```json
+"IntentClassification": {
+  "TopK": 3,
+  "MinConfidence": 0.45,
+  "IncludeDebugNotes": true
+},
+"VectorStore": {
+  "Provider": "InMemory"
+},
+"Qdrant": {
+  "BaseUrl": "https://your-qdrant-instance.cloud.qdrant.io",
+  "CollectionName": "intent-seed-poc",
+  "ApiKey": ""
+}
+```
+
+Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when cloud integration is ready.
