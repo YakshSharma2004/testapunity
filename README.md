@@ -1,26 +1,61 @@
 # testapi1
 
+## Redis container + API integration plan
+
+1. Keep Redis optional so the API can run even when the container is stopped.
+2. Use a resilient Redis connection string (`abortConnect=false`) so the API reconnects after Redis is started.
+3. Provide a Docker Compose file dedicated to Redis (`docker-compose.redis.yml`) to allow on-demand start/stop.
+4. Add a helper script (`scripts/redis-on-demand.sh`) for quick lifecycle control.
+5. Register a placeholder Redis abstraction (`IRedisPlaceholderStore`) to anchor future Redis work (locks, presence, queues, etc.) without coupling new logic directly to `IDistributedCache`.
+
 ## Redis cache setup
 This API uses Redis for caching intent and LLM responses. Configure the connection string via
-`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`. Defaults
-are included in `appsettings.json` for local development.
+`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`.
 
-### Local Redis with Docker
-```bash
-docker run --name testapi1-redis -p 6379:6379 -d redis:7
-```
+Current defaults are resilient to Redis being offline at API startup:
 
-If you need to connect to a different host/port, update `appsettings.Development.json`:
 ```json
-{
-  "ConnectionStrings": {
-    "Redis": "localhost:6379"
-  },
-  "Redis": {
-    "InstanceName": "testapi1:"
-  }
+"ConnectionStrings": {
+  "Redis": "localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000"
 }
 ```
+
+## Run Redis on-demand with Docker Compose
+
+### Start
+```bash
+./scripts/redis-on-demand.sh start
+```
+
+### Check status
+```bash
+./scripts/redis-on-demand.sh status
+```
+
+### View logs
+```bash
+./scripts/redis-on-demand.sh logs
+```
+
+### Stop (keep data volume)
+```bash
+./scripts/redis-on-demand.sh stop
+```
+
+### Remove container/network
+```bash
+./scripts/redis-on-demand.sh down
+```
+
+> Redis data is persisted in the `redis_data` Docker volume.
+
+## Placeholder Redis work
+A placeholder service is now registered:
+
+- Interface: `Application/IRedisPlaceholderStore.cs`
+- Implementation: `Services/Redis/DistributedCacheRedisPlaceholderStore.cs`
+
+Use this for upcoming Redis-backed features so we can evolve behavior in one place (serialization, retry policy, key conventions, fallbacks).
 
 ## ONNX Runtime integration (no Python runtime needed)
 
