@@ -1,4 +1,4 @@
-﻿namespace testapi1.Infrastructure
+﻿namespace testapi1.Infrastructure.VectorStores
 {
     public class TrainingDataLoader
     {

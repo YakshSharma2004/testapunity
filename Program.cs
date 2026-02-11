@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using Serilog;
 using testapi1.Application;   // interfaces namespace (adjust if needed)
 using testapi1.Services;      // implementations namespace (adjust if needed)
+using testapi1.Services.Caching;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,11 +13,19 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddStackExchangeRedisCache(options =>
+var redisConnection = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnection))
 {
-    options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-    options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
-});
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnection;
+        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 
 // CORS
 builder.Services.AddCors(options =>
@@ -51,10 +60,9 @@ builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 
 var app = builder.Build();
 
-// IMPORTANT: CORS must be before MapControllers
-app.UseCors("UnityCors");
 
-// For LAN dev: DO NOT force https redirect (it often breaks Unity calls)
+app.UseCors("UnityCors");
+//dont use
 // app.UseHttpsRedirection();
 
 app.UseSerilogRequestLogging();
