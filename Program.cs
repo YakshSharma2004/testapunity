@@ -5,6 +5,7 @@ using Serilog;
 using testapi1.Application;       // ITextNormalizer, IEmbeddingService, etc.
 using testapi1.Infrastructure;    // IVectorStore, VectorDbStore, QdrantOptions
 using testapi1.Services;          // TextNormalizationService, CachedIntentClassifier, etc.
+using testapi1.Application;   // interfaces namespace (adjust if needed)
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,13 +15,19 @@ builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration
 // ---------- MVC / API ----------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
-// ---------- Redis cache ----------
-builder.Services.AddStackExchangeRedisCache(options =>
+var redisConnection = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnection))
 {
-    options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-    options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
-});
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnection;
+        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
+    });
+}
+else
+{
+    builder.Services.AddDistributedMemoryCache();
+}
 
 // ---------- CORS for Unity ----------
 builder.Services.AddCors(options =>
@@ -71,6 +78,7 @@ builder.Services.Configure<OnnxModelOptions>(
     builder.Configuration.GetSection("Onnx"));
 
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
+builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
 // Fake embeddings for now (no ONNX model required)
 builder.Services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
@@ -79,10 +87,9 @@ builder.Services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
 
 var app = builder.Build();
 
-// CORS must be before MapControllers
-app.UseCors("UnityCors");
 
-// For LAN dev: https redirection is optional
+app.UseCors("UnityCors");
+//dont use
 // app.UseHttpsRedirection();
 
 app.UseSerilogRequestLogging();

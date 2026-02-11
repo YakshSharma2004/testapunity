@@ -1,7 +1,5 @@
-namespace testapi1.Application
+namespace testapi1.Application;
+public interface IEmbeddingService
 {
-    public interface IEmbeddingService
-    {
-        Task<float[]> CreateEmbeddingAsync(string text, CancellationToken cancellationToken = default);
-    }
+    Task<float[]> EmbedAsync(string text, CancellationToken ct = default);
 }

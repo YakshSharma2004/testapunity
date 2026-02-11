@@ -1,4 +1,7 @@
-﻿namespace testapi1.Infrastructure
+﻿using testapi1.Infrastructure.VectorStores;
+using System.Threading;
+using System.Threading.Tasks;
+namespace testapi1.Application
 {
     public interface IVectorStore
     {

@@ -2,8 +2,10 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using testapi1.Application;
+using testapi1.Infrastructure.VectorStores.Qdrant;
 
-namespace testapi1.Infrastructure
+namespace testapi1.Infrastructure.VectorStores
 {
     public sealed class VectorDbStore : IVectorStore
     {
