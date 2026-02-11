@@ -8,6 +8,7 @@ using testapi1.Infrastructure.VectorStores.Qdrant;
 using testapi1.Services;
 using testapi1.Services.Caching;
 using testapi1.Services.Intent;
+using testapi1.Services.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +43,7 @@ builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("Ap
 builder.Services.Configure<IntentClassificationOptions>(builder.Configuration.GetSection("IntentClassification"));
 
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
+builder.Services.AddSingleton<IRedisPlaceholderStore, DistributedCacheRedisPlaceholderStore>();
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
