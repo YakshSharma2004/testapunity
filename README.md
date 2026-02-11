@@ -49,6 +49,56 @@ Current defaults are resilient to Redis being offline at API startup:
 
 > Redis data is persisted in the `redis_data` Docker volume.
 
+## Exactly where the script is
+
+The script is in this repo at:
+
+- `scripts/redis-on-demand.sh`
+
+From the project root (`/workspace/testapunity`), run:
+
+```bash
+chmod +x ./scripts/redis-on-demand.sh
+./scripts/redis-on-demand.sh start
+```
+
+If you are in a different folder, call it with an absolute path:
+
+```bash
+/workspace/testapunity/scripts/redis-on-demand.sh start
+```
+
+## Docker Compose file (copy/paste)
+
+The Redis compose file used by the script is `docker-compose.redis.yml` in the project root:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: testapi1-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+```
+
+You can also run Docker Compose directly without the helper script:
+
+```bash
+docker compose -f docker-compose.redis.yml up -d redis
+```
+
 ## Placeholder Redis work
 A placeholder service is now registered:
 
