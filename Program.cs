@@ -14,6 +14,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
 
+// ---------- MVC / API ----------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -80,6 +81,7 @@ else
 
 builder.Services.AddHostedService<IntentSeedHostedService>();
 builder.Services.AddSingleton<IntentClassifier>();
+
 builder.Services.AddSingleton<IIntentClassifier>(sp =>
     new CachedIntentClassifier(
         sp.GetRequiredService<IntentClassifier>(),
@@ -89,6 +91,7 @@ builder.Services.AddSingleton<IIntentClassifier>(sp =>
         sp.GetRequiredService<ILogger<CachedIntentClassifier>>()));
 
 builder.Services.AddSingleton<LlmService>();
+
 builder.Services.AddSingleton<ILLMService>(sp =>
     new CachedLlmService(
         sp.GetRequiredService<LlmService>(),
@@ -96,6 +99,17 @@ builder.Services.AddSingleton<ILLMService>(sp =>
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
+//this needs to be double chechked
+builder.Services.Configure<OnnxModelOptions>(
+    builder.Configuration.GetSection("Onnx"));
+
+builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
+builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
+
+// Fake embeddings for now (no ONNX model required)
+builder.Services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
+
+// ---------- BUILD APP ----------
 
 var app = builder.Build();
 
@@ -106,3 +120,12 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+app.Start();
+public sealed class QdrantOptions
+{
+    public string BaseUrl { get; set; } = "";
+    public string CollectionName { get; set; } = "";
+    public string? ApiKey { get; set; }
+
+    public Uri GetBaseUri() => new(BaseUrl.TrimEnd('/') + "/");
+}
