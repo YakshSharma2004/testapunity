@@ -21,7 +21,7 @@ namespace testapi1.Application
             _onnxModelRunner = onnxModelRunner;
         }
 
-        public async Task<float[]> CreateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
+        public async Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
             {

@@ -7,7 +7,7 @@ namespace testapi1.Application
     {
         private const int Dim = 384;
 
-        public Task<float[]> CreateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
+        public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(text))
             {

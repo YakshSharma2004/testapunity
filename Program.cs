@@ -9,7 +9,6 @@ using testapi1.Services;
 using testapi1.Services.Caching;
 using testapi1.Services.Intent;
 using testapi1.Services.Redis;
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
@@ -54,13 +53,14 @@ if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
 {
     var qdrantBaseUrl = builder.Configuration["Qdrant:BaseUrl"];
     var qdrantCollection = builder.Configuration["Qdrant:CollectionName"];
+    var qdrantApiKey = builder.Configuration["Qdrant:ApiKey"];
 
     if (string.IsNullOrWhiteSpace(qdrantBaseUrl) || string.IsNullOrWhiteSpace(qdrantCollection))
     {
         throw new InvalidOperationException("Qdrant provider selected but Qdrant:BaseUrl or Qdrant:CollectionName is missing.");
     }
 
-    var qdrantOptions = new QdrantOptions(qdrantBaseUrl, qdrantCollection);
+    var qdrantOptions = new QdrantOptions(qdrantBaseUrl, qdrantCollection, qdrantApiKey);
 
     builder.Services.AddSingleton(qdrantOptions);
     builder.Services.AddHttpClient<IVectorStore, VectorDbStore>(client =>
@@ -126,6 +126,11 @@ public sealed class QdrantOptions
     public string BaseUrl { get; set; } = "";
     public string CollectionName { get; set; } = "";
     public string? ApiKey { get; set; }
-
+    public QdrantOptions(string baseUrl, string collectionName, string? apiKey = null)
+    {
+        BaseUrl = baseUrl;
+        CollectionName = collectionName;
+        ApiKey = apiKey;
+    }
     public Uri GetBaseUri() => new(BaseUrl.TrimEnd('/') + "/");
 }

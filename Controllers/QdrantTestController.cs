@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using testapi1.Infrastructure;
 using testapi1.Application;
+using testapi1.Infrastructure.VectorStores;
 
 namespace testapi1.Controllers
 {
@@ -20,7 +21,7 @@ namespace testapi1.Controllers
         [HttpPost("upsert")]
         public async Task<IActionResult> Upsert([FromBody] string text, CancellationToken ct)
         {
-            var vector = await _embedding.CreateEmbeddingAsync(text, ct);
+            var vector = await _embedding.EmbedAsync(text, ct);
 
             var record = new VectorRecord(
                 Id: Guid.NewGuid().ToString(),
@@ -35,7 +36,7 @@ namespace testapi1.Controllers
         [HttpPost("search")]
         public async Task<IActionResult> Search([FromBody] string query, CancellationToken ct)
         {
-            var vector = await _embedding.CreateEmbeddingAsync(query, ct);
+            var vector = await _embedding.EmbedAsync(query, ct);
             var results = await _store.QuerySimilar(vector, 5, ct);
             return Ok(results);
         }
