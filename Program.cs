@@ -2,19 +2,22 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
-using testapi1.Application;       // ITextNormalizer, IEmbeddingService, etc.
-using testapi1.Infrastructure;    // IVectorStore, VectorDbStore, QdrantOptions
-using testapi1.Services;          // TextNormalizationService, CachedIntentClassifier, etc.
-using testapi1.Application;   // interfaces namespace (adjust if needed)
+using testapi1.Application;
+using testapi1.Infrastructure.VectorStores;
+using testapi1.Infrastructure.VectorStores.Qdrant;
+using testapi1.Services;
+using testapi1.Services.Caching;
+using testapi1.Services.Intent;
+using testapi1.Services.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---------- Serilog ----------
 builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
 
 // ---------- MVC / API ----------
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
 var redisConnection = builder.Configuration.GetConnectionString("Redis");
 if (!string.IsNullOrWhiteSpace(redisConnection))
 {
@@ -29,7 +32,6 @@ else
     builder.Services.AddDistributedMemoryCache();
 }
 
-// ---------- CORS for Unity ----------
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("UnityCors", policy =>
@@ -38,22 +40,46 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod());
 });
 
-// ---------- QDRANT + VECTOR STORE SETUP ----------
+builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("ApiCache"));
+builder.Services.Configure<IntentClassificationOptions>(builder.Configuration.GetSection("IntentClassification"));
 
-// Bind Qdrant options from appsettings.json ("Qdrant" section)
-builder.Services.Configure<QdrantOptions>(
-    builder.Configuration.GetSection("Qdrant"));
-
-// Register HttpClient + VectorDbStore as the IVectorStore implementation
-builder.Services.AddHttpClient<IVectorStore, VectorDbStore>();
-
-// ---------- APPLICATION / SERVICES DI ----------
-
+builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
+builder.Services.AddSingleton<IRedisPlaceholderStore, DistributedCacheRedisPlaceholderStore>();
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
+builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
+builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
-builder.Services.Configure<ApiCacheOptions>(
-    builder.Configuration.GetSection("ApiCache"));
+var vectorProvider = builder.Configuration["VectorStore:Provider"] ?? "InMemory";
+if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
+{
+    var qdrantBaseUrl = builder.Configuration["Qdrant:BaseUrl"];
+    var qdrantCollection = builder.Configuration["Qdrant:CollectionName"];
 
+    if (string.IsNullOrWhiteSpace(qdrantBaseUrl) || string.IsNullOrWhiteSpace(qdrantCollection))
+    {
+        throw new InvalidOperationException("Qdrant provider selected but Qdrant:BaseUrl or Qdrant:CollectionName is missing.");
+    }
+
+    var qdrantOptions = new QdrantOptions(qdrantBaseUrl, qdrantCollection);
+
+    builder.Services.AddSingleton(qdrantOptions);
+    builder.Services.AddHttpClient<IVectorStore, VectorDbStore>(client =>
+    {
+        client.BaseAddress = qdrantOptions.GetBaseUri();
+
+        var apiKey = builder.Configuration["Qdrant:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(apiKey))
+        {
+            client.DefaultRequestHeaders.Add("api-key", apiKey);
+        }
+    });
+}
+else
+{
+    builder.Services.AddSingleton<IVectorStore, InMemoryVectorStore>();
+}
+
+builder.Services.AddHostedService<IntentSeedHostedService>();
 builder.Services.AddSingleton<IntentClassifier>();
 
 builder.Services.AddSingleton<IIntentClassifier>(sp =>
@@ -73,7 +99,7 @@ builder.Services.AddSingleton<ILLMService>(sp =>
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
-
+//this needs to be double chechked
 builder.Services.Configure<OnnxModelOptions>(
     builder.Configuration.GetSection("Onnx"));
 
@@ -87,11 +113,7 @@ builder.Services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
 
 var app = builder.Build();
 
-
 app.UseCors("UnityCors");
-//dont use
-// app.UseHttpsRedirection();
-
 app.UseSerilogRequestLogging();
 app.UseAuthorization();
 

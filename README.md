@@ -1,26 +1,111 @@
 # testapi1
 
+## Redis container + API integration plan
+
+1. Keep Redis optional so the API can run even when the container is stopped.
+2. Use a resilient Redis connection string (`abortConnect=false`) so the API reconnects after Redis is started.
+3. Provide a Docker Compose file dedicated to Redis (`docker-compose.redis.yml`) to allow on-demand start/stop.
+4. Add a helper script (`scripts/redis-on-demand.sh`) for quick lifecycle control.
+5. Register a placeholder Redis abstraction (`IRedisPlaceholderStore`) to anchor future Redis work (locks, presence, queues, etc.) without coupling new logic directly to `IDistributedCache`.
+
 ## Redis cache setup
 This API uses Redis for caching intent and LLM responses. Configure the connection string via
-`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`. Defaults
-are included in `appsettings.json` for local development.
+`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`.
 
-### Local Redis with Docker
-```bash
-docker run --name testapi1-redis -p 6379:6379 -d redis:7
-```
+Current defaults are resilient to Redis being offline at API startup:
 
-If you need to connect to a different host/port, update `appsettings.Development.json`:
 ```json
-{
-  "ConnectionStrings": {
-    "Redis": "localhost:6379"
-  },
-  "Redis": {
-    "InstanceName": "testapi1:"
-  }
+"ConnectionStrings": {
+  "Redis": "localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000"
 }
 ```
+
+## Run Redis on-demand with Docker Compose
+
+### Start
+```bash
+./scripts/redis-on-demand.sh start
+```
+
+### Check status
+```bash
+./scripts/redis-on-demand.sh status
+```
+
+### View logs
+```bash
+./scripts/redis-on-demand.sh logs
+```
+
+### Stop (keep data volume)
+```bash
+./scripts/redis-on-demand.sh stop
+```
+
+### Remove container/network
+```bash
+./scripts/redis-on-demand.sh down
+```
+
+> Redis data is persisted in the `redis_data` Docker volume.
+
+## Exactly where the script is
+
+The script is in this repo at:
+
+- `scripts/redis-on-demand.sh`
+
+From the project root (`/workspace/testapunity`), run:
+
+```bash
+chmod +x ./scripts/redis-on-demand.sh
+./scripts/redis-on-demand.sh start
+```
+
+If you are in a different folder, call it with an absolute path:
+
+```bash
+/workspace/testapunity/scripts/redis-on-demand.sh start
+```
+
+## Docker Compose file (copy/paste)
+
+The Redis compose file used by the script is `docker-compose.redis.yml` in the project root:
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: testapi1-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+```
+
+You can also run Docker Compose directly without the helper script:
+
+```bash
+docker compose -f docker-compose.redis.yml up -d redis
+```
+
+## Placeholder Redis work
+A placeholder service is now registered:
+
+- Interface: `Application/IRedisPlaceholderStore.cs`
+- Implementation: `Services/Redis/DistributedCacheRedisPlaceholderStore.cs`
+
+Use this for upcoming Redis-backed features so we can evolve behavior in one place (serialization, retry policy, key conventions, fallbacks).
 
 ## ONNX Runtime integration (no Python runtime needed)
 
@@ -72,3 +157,31 @@ var logits = outputs["logits"];
 ### 5) GPU (optional later)
 
 If you want GPU acceleration, swap the runtime package to the GPU variant and update `SessionOptions` accordingly. Start with CPU first to validate correctness.
+
+## Intent classification POC (seeded cosine similarity)
+
+This project now supports a seeded intent classification proof-of-concept:
+
+- On startup, a hosted service embeds fixed seed utterances and upserts them into the configured `IVectorStore`.
+- The classifier embeds user text, runs top-k similarity search, and picks the highest-scoring intent.
+- A confidence threshold allows fallback to `unknown` for low-similarity queries.
+
+### Configuration
+
+```json
+"IntentClassification": {
+  "TopK": 3,
+  "MinConfidence": 0.45,
+  "IncludeDebugNotes": true
+},
+"VectorStore": {
+  "Provider": "InMemory"
+},
+"Qdrant": {
+  "BaseUrl": "https://your-qdrant-instance.cloud.qdrant.io",
+  "CollectionName": "intent-seed-poc",
+  "ApiKey": ""
+}
+```
+
+Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when cloud integration is ready.
