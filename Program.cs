@@ -106,8 +106,8 @@ builder.Services.Configure<OnnxModelOptions>(
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
-// Fake embeddings for now (no ONNX model required)
-builder.Services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
+//// Fake embeddings for now (no ONNX model required)
+//builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
 // ---------- BUILD APP ----------
 
