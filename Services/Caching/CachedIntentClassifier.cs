@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using testapi1.Application;
 using testapi1.Contracts;
+using testapi1.Services.Embeddings;
 
 namespace testapi1.Services.Caching
 {
@@ -16,6 +17,7 @@ namespace testapi1.Services.Caching
         private readonly IDistributedCache _cache;
         private readonly ITextNormalizer _textNormalizer;
         private readonly IOptionsMonitor<ApiCacheOptions> _optionsMonitor;
+        private readonly IOptionsMonitor<EmbeddingsOptions> _embeddingsOptionsMonitor;
         private readonly ILogger<CachedIntentClassifier> _logger;
 
         public CachedIntentClassifier(
@@ -23,12 +25,14 @@ namespace testapi1.Services.Caching
             IDistributedCache cache,
             ITextNormalizer textNormalizer,
             IOptionsMonitor<ApiCacheOptions> optionsMonitor,
+            IOptionsMonitor<EmbeddingsOptions> embeddingsOptionsMonitor,
             ILogger<CachedIntentClassifier> logger)
         {
             _inner = inner;
             _cache = cache;
             _textNormalizer = textNormalizer;
             _optionsMonitor = optionsMonitor;
+            _embeddingsOptionsMonitor = embeddingsOptionsMonitor;
             _logger = logger;
         }
 
@@ -43,7 +47,8 @@ namespace testapi1.Services.Caching
             var npcKey = request.NpcId ?? "";
             var contextKey = request.ContextKey ?? "";
             var modelVersion = _optionsMonitor.CurrentValue.ModelVersion ?? "";
-            var cacheKey = $"intent:{modelVersion}:{normalized}:{npcKey}:{contextKey}";
+            var embeddingModel = EmbeddingModelName.Normalize(_embeddingsOptionsMonitor.CurrentValue.Model);
+            var cacheKey = $"intent:{modelVersion}:{embeddingModel}:{normalized}:{npcKey}:{contextKey}";
 
             try
             {

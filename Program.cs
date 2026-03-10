@@ -7,8 +7,17 @@ using testapi1.Infrastructure.VectorStores;
 using testapi1.Infrastructure.VectorStores.Qdrant;
 using testapi1.Services;
 using testapi1.Services.Caching;
+using testapi1.Services.Embeddings;
+using testapi1.Services.Evaluation;
 using testapi1.Services.Intent;
 using testapi1.Services.Redis;
+
+if (IntentEvaluationCli.IsRequested(args))
+{
+    Environment.ExitCode = await IntentEvaluationCli.RunAsync(args);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
@@ -41,12 +50,14 @@ builder.Services.AddCors(options =>
 
 builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("ApiCache"));
 builder.Services.Configure<IntentClassificationOptions>(builder.Configuration.GetSection("IntentClassification"));
+builder.Services.Configure<EmbeddingsOptions>(builder.Configuration.GetSection("Embeddings"));
 
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddSingleton<IRedisPlaceholderStore, DistributedCacheRedisPlaceholderStore>();
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
-builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
+builder.Services.AddSingleton<ConfigurableOnnxEmbeddingService>();
+builder.Services.AddSingleton<IEmbeddingService>(sp => sp.GetRequiredService<ConfigurableOnnxEmbeddingService>());
 
 var vectorProvider = builder.Configuration["VectorStore:Provider"] ?? "InMemory";
 if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
@@ -88,6 +99,7 @@ builder.Services.AddSingleton<IIntentClassifier>(sp =>
         sp.GetRequiredService<IDistributedCache>(),
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
+        sp.GetRequiredService<IOptionsMonitor<EmbeddingsOptions>>(),
         sp.GetRequiredService<ILogger<CachedIntentClassifier>>()));
 
 builder.Services.AddSingleton<LlmService>();
@@ -99,15 +111,6 @@ builder.Services.AddSingleton<ILLMService>(sp =>
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
-//this needs to be double chechked
-builder.Services.Configure<OnnxModelOptions>(
-    builder.Configuration.GetSection("Onnx"));
-
-builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
-builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
-
-//// Fake embeddings for now (no ONNX model required)
-//builder.Services.AddSingleton<IEmbeddingService, MpnetOnnxEmbeddingService>();
 
 // ---------- BUILD APP ----------
 
@@ -120,7 +123,7 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-app.Start();
+
 public sealed class QdrantOptions
 {
     public string BaseUrl { get; set; } = "";

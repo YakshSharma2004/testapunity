@@ -117,7 +117,7 @@ Update `appsettings.json` (or environment variables) with your model location an
 
 ```json
 "Onnx": {
-  "ModelPath": "Models/intent-classifier.onnx",
+  "ModelPath": "models/intent-classifier.onnx",
   "InputNames": [ "input_ids" ],
   "OutputNames": [ "logits" ]
 }
@@ -169,6 +169,21 @@ This project now supports a seeded intent classification proof-of-concept:
 ### Configuration
 
 ```json
+"Embeddings": {
+  "Model": "mpnet",
+  "Models": {
+    "mpnet": {
+      "ModelPath": "models/mpnet/model.onnx",
+      "TokenizerPath": "models/mpnet/tokenizer.json",
+      "MaxLen": 384
+    },
+    "multiqa": {
+      "ModelPath": "models/multiqa/model.onnx",
+      "TokenizerPath": "models/multiqa/tokenizer.json",
+      "MaxLen": 384
+    }
+  }
+},
 "IntentClassification": {
   "TopK": 3,
   "MinConfidence": 0.45,
@@ -185,3 +200,28 @@ This project now supports a seeded intent classification proof-of-concept:
 ```
 
 Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when cloud integration is ready.
+
+### Embedding model selection
+
+- Active runtime model is selected by `Embeddings:Model` (`mpnet` or `multiqa`).
+- Model assets are loaded from the corresponding configured `ModelPath` + `TokenizerPath`.
+- Keep paths lowercase (`models/...`) to avoid Linux path casing issues.
+
+### Offline A/B evaluation CLI
+
+Run a local comparison between configured embedding models using the same seed set and threshold policy:
+
+```bash
+dotnet run -- --eval-intents --dataset evaluation/intent-validation.json --models mpnet,multiqa --threshold 0.45 --sweep 0.35,0.45,0.55,0.65
+```
+
+Outputs are written to:
+
+- `Logs/model-eval/<timestamp>-comparison.json`
+- `Logs/model-eval/<timestamp>-comparison.md`
+
+Validation dataset format (`evaluation/intent-validation.json`):
+
+```json
+[{ "text": "walk me through what happened", "expected_intent": "ASK_OPEN_QUESTION" }]
+```
