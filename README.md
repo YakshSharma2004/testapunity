@@ -200,6 +200,7 @@ This project now supports a seeded intent classification proof-of-concept:
 ```
 
 Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when cloud integration is ready.
+For Qdrant API key, prefer environment variable `Qdrant__ApiKey` instead of committing secrets.
 
 ### Embedding model selection
 
@@ -207,21 +208,24 @@ Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when 
 - Model assets are loaded from the corresponding configured `ModelPath` + `TokenizerPath`.
 - Keep paths lowercase (`models/...`) to avoid Linux path casing issues.
 
-### Offline A/B evaluation CLI
+### Progression state machine API (backend authoritative)
 
-Run a local comparison between configured embedding models using the same seed set and threshold policy:
+Progression endpoints:
 
-```bash
-dotnet run -- --eval-intents --dataset evaluation/intent-validation.json --models mpnet,multiqa --threshold 0.45 --sweep 0.35,0.45,0.55,0.65
-```
+- `POST /api/v1/progression/start`
+- `POST /api/v1/progression/turn`
+- `GET /api/v1/progression/{sessionId}`
 
-Outputs are written to:
+The progression engine currently ships with one authored case graph (`dylan-interrogation`) and uses:
 
-- `Logs/model-eval/<timestamp>-comparison.json`
-- `Logs/model-eval/<timestamp>-comparison.md`
+- intent classification output (`ASK_TIMELINE`, `PRESENT_EVIDENCE`, etc.),
+- evidence detection from evidence-style turns (`E1`, `E2`, `E4`, `E5`, `E7`),
+- deterministic transition rules with terminal endings.
 
-Validation dataset format (`evaluation/intent-validation.json`):
+Session state is stored in-memory with TTL configured by:
 
 ```json
-[{ "text": "walk me through what happened", "expected_intent": "ASK_OPEN_QUESTION" }]
+"Progression": {
+  "SessionTtlMinutes": 120
+}
 ```

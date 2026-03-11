@@ -8,15 +8,9 @@ using testapi1.Infrastructure.VectorStores.Qdrant;
 using testapi1.Services;
 using testapi1.Services.Caching;
 using testapi1.Services.Embeddings;
-using testapi1.Services.Evaluation;
 using testapi1.Services.Intent;
+using testapi1.Services.Progression;
 using testapi1.Services.Redis;
-
-if (IntentEvaluationCli.IsRequested(args))
-{
-    Environment.ExitCode = await IntentEvaluationCli.RunAsync(args);
-    return;
-}
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +45,8 @@ builder.Services.AddCors(options =>
 builder.Services.Configure<ApiCacheOptions>(builder.Configuration.GetSection("ApiCache"));
 builder.Services.Configure<IntentClassificationOptions>(builder.Configuration.GetSection("IntentClassification"));
 builder.Services.Configure<EmbeddingsOptions>(builder.Configuration.GetSection("Embeddings"));
+builder.Services.Configure<ProgressionOptions>(builder.Configuration.GetSection("Progression"));
+builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection("Qdrant"));
 
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddSingleton<IRedisPlaceholderStore, DistributedCacheRedisPlaceholderStore>();
@@ -64,24 +60,25 @@ if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
 {
     var qdrantBaseUrl = builder.Configuration["Qdrant:BaseUrl"];
     var qdrantCollection = builder.Configuration["Qdrant:CollectionName"];
-    var qdrantApiKey = builder.Configuration["Qdrant:ApiKey"];
 
     if (string.IsNullOrWhiteSpace(qdrantBaseUrl) || string.IsNullOrWhiteSpace(qdrantCollection))
     {
         throw new InvalidOperationException("Qdrant provider selected but Qdrant:BaseUrl or Qdrant:CollectionName is missing.");
     }
 
-    var qdrantOptions = new QdrantOptions(qdrantBaseUrl, qdrantCollection, qdrantApiKey);
-
-    builder.Services.AddSingleton(qdrantOptions);
-    builder.Services.AddHttpClient<IVectorStore, VectorDbStore>(client =>
+    builder.Services.AddHttpClient<IVectorStore, VectorDbStore>((sp, client) =>
     {
+        var qdrantOptions = sp.GetRequiredService<IOptions<QdrantOptions>>().Value;
+        if (string.IsNullOrWhiteSpace(qdrantOptions.BaseUrl) || string.IsNullOrWhiteSpace(qdrantOptions.CollectionName))
+        {
+            throw new InvalidOperationException("Qdrant provider selected but Qdrant options are not configured.");
+        }
+
         client.BaseAddress = qdrantOptions.GetBaseUri();
 
-        var apiKey = builder.Configuration["Qdrant:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(apiKey))
+        if (!string.IsNullOrWhiteSpace(qdrantOptions.ApiKey))
         {
-            client.DefaultRequestHeaders.Add("api-key", apiKey);
+            client.DefaultRequestHeaders.Add("api-key", qdrantOptions.ApiKey);
         }
     });
 }
@@ -111,6 +108,10 @@ builder.Services.AddSingleton<ILLMService>(sp =>
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
         sp.GetRequiredService<ILogger<CachedLlmService>>()));
+builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
+builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessionStore>();
+builder.Services.AddSingleton<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
+builder.Services.AddSingleton<IGameProgressionService, GameProgressionService>();
 
 // ---------- BUILD APP ----------
 
@@ -123,17 +124,3 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
-
-public sealed class QdrantOptions
-{
-    public string BaseUrl { get; set; } = "";
-    public string CollectionName { get; set; } = "";
-    public string? ApiKey { get; set; }
-    public QdrantOptions(string baseUrl, string collectionName, string? apiKey = null)
-    {
-        BaseUrl = baseUrl;
-        CollectionName = collectionName;
-        ApiKey = apiKey;
-    }
-    public Uri GetBaseUri() => new(BaseUrl.TrimEnd('/') + "/");
-}
