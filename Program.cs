@@ -11,6 +11,8 @@ using testapi1.Services.Embeddings;
 using testapi1.Services.Intent;
 using testapi1.Services.Progression;
 using testapi1.Services.Redis;
+using Microsoft.EntityFrameworkCore;
+using testapi1.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -113,6 +115,22 @@ builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessi
 builder.Services.AddSingleton<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
 builder.Services.AddSingleton<IGameProgressionService, GameProgressionService>();
 
+// ---------- Postgres ----------
+
+var postgresConnection = builder.Configuration.GetConnectionString("Postgres");
+if (!string.IsNullOrWhiteSpace(postgresConnection))
+{
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(postgresConnection));
+
+    // Replace InMemoryProgressionSessionStore with Postgres-backed store
+    builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
+}
+else
+{
+    // Fallback to in-memory if no Postgres connection configured
+    builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessionStore>();
+}
 // ---------- BUILD APP ----------
 
 var app = builder.Build();
