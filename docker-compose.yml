@@ -1,7 +1,8 @@
-services:
+﻿services:
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    command:
+      ["redis-server","--appendonly","yes","--maxmemory","${REDIS_MAXMEMORY:-1gb}","--maxmemory-policy","${REDIS_MAXMEMORY_POLICY:-allkeys-lru}"]
     ports:
       - "6379:6379"
     volumes:
@@ -18,8 +19,8 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: testgame
-      POSTGRES_USER: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-testgame}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
