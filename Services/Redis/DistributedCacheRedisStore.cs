@@ -8,17 +8,17 @@ using testapi1.Application;
 namespace testapi1.Services.Redis
 {
     /// <summary>
-    /// Lightweight placeholder implementation that routes through IDistributedCache.
+    /// Redis cache store implementation that routes through IDistributedCache.
     /// Works with Redis when available and safely degrades when Redis is offline.
     /// </summary>
-    public class DistributedCacheRedisPlaceholderStore : IRedisPlaceholderStore
+    public class DistributedCacheRedisStore : IRedisCacheStore
     {
         private readonly IDistributedCache _cache;
-        private readonly ILogger<DistributedCacheRedisPlaceholderStore> _logger;
+        private readonly ILogger<DistributedCacheRedisStore> _logger;
 
-        public DistributedCacheRedisPlaceholderStore(
+        public DistributedCacheRedisStore(
             IDistributedCache cache,
-            ILogger<DistributedCacheRedisPlaceholderStore> logger)
+            ILogger<DistributedCacheRedisStore> logger)
         {
             _cache = cache;
             _logger = logger;
@@ -42,7 +42,7 @@ namespace testapi1.Services.Redis
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Redis placeholder write failed for key {CacheKey}", key);
+                _logger.LogWarning(ex, "Redis cache write failed for key {CacheKey}", key);
             }
         }
 
@@ -59,7 +59,7 @@ namespace testapi1.Services.Redis
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Redis placeholder read failed for key {CacheKey}", key);
+                _logger.LogWarning(ex, "Redis cache read failed for key {CacheKey}", key);
                 return null;
             }
         }

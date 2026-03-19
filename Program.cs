@@ -7,11 +7,15 @@ using testapi1.Infrastructure.VectorStores;
 using testapi1.Infrastructure.VectorStores.Qdrant;
 using testapi1.Services;
 using testapi1.Services.Caching;
+using testapi1.Services.Configuration;
+using testapi1.Services.Connectivity;
 using testapi1.Services.Embeddings;
 using testapi1.Services.Intent;
 using testapi1.Services.Progression;
 using testapi1.Services.Redis;
 
+var dotEnvLoadedCount = DotEnvLoader.LoadIfDevelopment(Directory.GetCurrentDirectory());
+ExternalDependencyEnvValidator.ValidateOrThrow();
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration));
@@ -26,7 +30,7 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = redisConnection;
-        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
+        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "redis-server:";
     });
 }
 else
@@ -47,11 +51,14 @@ builder.Services.Configure<IntentClassificationOptions>(builder.Configuration.Ge
 builder.Services.Configure<EmbeddingsOptions>(builder.Configuration.GetSection("Embeddings"));
 builder.Services.Configure<ProgressionOptions>(builder.Configuration.GetSection("Progression"));
 builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection("Qdrant"));
+builder.Services.Configure<RemoteConnectivityOptions>(builder.Configuration.GetSection("RemoteConnectivity"));
 
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
-builder.Services.AddSingleton<IRedisPlaceholderStore, DistributedCacheRedisPlaceholderStore>();
+builder.Services.AddHttpClient("remote-dependency-probe");
+builder.Services.AddSingleton<IRedisCacheStore, DistributedCacheRedisStore>();
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
+builder.Services.AddSingleton<IRemoteDependencyProbe, RemoteDependencyProbeService>();
 builder.Services.AddSingleton<ConfigurableOnnxEmbeddingService>();
 builder.Services.AddSingleton<IEmbeddingService>(sp => sp.GetRequiredService<ConfigurableOnnxEmbeddingService>());
 
@@ -87,13 +94,12 @@ else
     builder.Services.AddSingleton<IVectorStore, InMemoryVectorStore>();
 }
 
-builder.Services.AddHostedService<IntentSeedHostedService>();
 builder.Services.AddSingleton<IntentClassifier>();
 
 builder.Services.AddSingleton<IIntentClassifier>(sp =>
     new CachedIntentClassifier(
         sp.GetRequiredService<IntentClassifier>(),
-        sp.GetRequiredService<IDistributedCache>(),
+        sp.GetRequiredService<IRedisCacheStore>(),
         sp.GetRequiredService<ITextNormalizer>(),
         sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
         sp.GetRequiredService<IOptionsMonitor<EmbeddingsOptions>>(),
@@ -101,13 +107,7 @@ builder.Services.AddSingleton<IIntentClassifier>(sp =>
 
 builder.Services.AddSingleton<LlmService>();
 
-builder.Services.AddSingleton<ILLMService>(sp =>
-    new CachedLlmService(
-        sp.GetRequiredService<LlmService>(),
-        sp.GetRequiredService<IDistributedCache>(),
-        sp.GetRequiredService<ITextNormalizer>(),
-        sp.GetRequiredService<IOptionsMonitor<ApiCacheOptions>>(),
-        sp.GetRequiredService<ILogger<CachedLlmService>>()));
+builder.Services.AddSingleton<ILLMService>(sp => sp.GetRequiredService<LlmService>());
 builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
 builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessionStore>();
 builder.Services.AddSingleton<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
@@ -116,6 +116,16 @@ builder.Services.AddSingleton<IGameProgressionService, GameProgressionService>()
 // ---------- BUILD APP ----------
 
 var app = builder.Build();
+
+var redisTarget = DependencyTargetParser.GetRedisTarget(builder.Configuration.GetConnectionString("Redis"));
+var qdrantTarget = DependencyTargetParser.GetQdrantTarget(builder.Configuration["Qdrant:BaseUrl"]);
+var postgresTarget = DependencyTargetParser.GetPostgresTarget(builder.Configuration.GetConnectionString("Postgres"));
+app.Logger.LogInformation(
+    "Dependency targets configured (host:port only). Redis={RedisTarget}; Qdrant={QdrantTarget}; Postgres={PostgresTarget}; DotEnvVariablesLoaded={DotEnvLoadedCount}",
+    redisTarget,
+    qdrantTarget,
+    postgresTarget,
+    dotEnvLoadedCount);
 
 app.UseCors("UnityCors");
 app.UseSerilogRequestLogging();
