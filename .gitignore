@@ -316,6 +316,12 @@ paket-files/
 __pycache__/
 *.pyc
 
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.laptop2.example
+
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config
@@ -363,3 +369,5 @@ MigrationBackup/
 FodyWeavers.xsd
 
 appsettings.json
+
+.env

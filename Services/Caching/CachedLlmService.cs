@@ -36,7 +36,7 @@ namespace testapi1.Services.Caching
         {
             if (payload == null)
             {
-                return await _inner.GenerateResponseAsync(payload, cancellationToken);
+                throw new ArgumentNullException(nameof(payload));
             }
 
             var normalized = _textNormalizer.NormalizeForMatch(payload.promptText);

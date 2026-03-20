@@ -1,15 +1,43 @@
 # testapi1
 
+## Remote-first connectivity (Laptop 1 -> Laptop 2)
+
+This API now supports remote-first dependency targets for Redis, Qdrant, and Postgres, with manual fallback via environment variables.
+
+- Redis cache path is controlled by `ConnectionStrings:Redis`.
+- Qdrant vector path remains `IVectorStore` (`VectorStore:Provider=Qdrant`) and is controlled by `Qdrant:BaseUrl`.
+- Postgres is connectivity-probe only in this phase, controlled by `ConnectionStrings:Postgres`.
+- A dependency probe endpoint is available at `GET /api/v1/infra/dependencies`.
+- In `Development`, a `.env` file in the repo root is auto-loaded at startup (without overriding already-set environment variables).
+- External dependency endpoints are env-first and validated at startup (`.env` or process environment variables).
+- Intent caching uses SHA-256 hashed cache keys (no raw normalized text in Redis key names).
+- LLM caching is intentionally disabled for now.
+- Redis runs with memory protection and eviction: `maxmemory=1gb`, `maxmemory-policy=allkeys-lru`.
+
+### Main API .env example (Laptop 1)
+
+Use `.env.example` as the template for remote-first settings and local fallback switch values.
+Required keys are:
+- `CONNECTIONSTRINGS__REDIS`
+- `CONNECTIONSTRINGS__POSTGRES`
+- `VECTORSTORE__PROVIDER` (must be `Qdrant`)
+- `QDRANT__BASEURL`
+- `QDRANT__COLLECTIONNAME`
+
+### Laptop 2 Docker .env example
+
+Use `.env.laptop2.example` as the template for Docker Compose secrets/credentials on Laptop 2.
+
 ## Redis container + API integration plan
 
 1. Keep Redis optional so the API can run even when the container is stopped.
 2. Use a resilient Redis connection string (`abortConnect=false`) so the API reconnects after Redis is started.
-3. Provide a Docker Compose file dedicated to Redis (`docker-compose.redis.yml`) to allow on-demand start/stop.
+3. Run Redis using the repo compose file (`docker-compose.yml`) for on-demand start/stop.
 4. Add a helper script (`scripts/redis-on-demand.sh`) for quick lifecycle control.
-5. Register a placeholder Redis abstraction (`IRedisPlaceholderStore`) to anchor future Redis work (locks, presence, queues, etc.) without coupling new logic directly to `IDistributedCache`.
+5. Use `IRedisCacheStore` as the single Redis cache abstraction for app services.
 
 ## Redis cache setup
-This API uses Redis for caching intent and LLM responses. Configure the connection string via
+This API uses Redis for intent caching. Configure the connection string via
 `ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`.
 
 Current defaults are resilient to Redis being offline at API startup:
@@ -70,14 +98,23 @@ If you are in a different folder, call it with an absolute path:
 
 ## Docker Compose file (copy/paste)
 
-The Redis compose file used by the script is `docker-compose.redis.yml` in the project root:
+Redis service runs from `docker-compose.yml` in the project root:
 
 ```yaml
 services:
   redis:
     image: redis:7-alpine
     container_name: testapi1-redis
-    command: ["redis-server", "--appendonly", "yes"]
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--maxmemory",
+        "${REDIS_MAXMEMORY:-1gb}",
+        "--maxmemory-policy",
+        "${REDIS_MAXMEMORY_POLICY:-allkeys-lru}"
+      ]
     ports:
       - "6379:6379"
     volumes:
@@ -96,16 +133,16 @@ volumes:
 You can also run Docker Compose directly without the helper script:
 
 ```bash
-docker compose -f docker-compose.redis.yml up -d redis
+docker compose -f docker-compose.yml up -d redis
 ```
 
-## Placeholder Redis work
-A placeholder service is now registered:
+## Redis cache abstraction
+The Redis cache abstraction is:
 
-- Interface: `Application/IRedisPlaceholderStore.cs`
-- Implementation: `Services/Redis/DistributedCacheRedisPlaceholderStore.cs`
+- Interface: `Application/IRedisCacheStore.cs`
+- Implementation: `Services/Redis/DistributedCacheRedisStore.cs`
 
-Use this for upcoming Redis-backed features so we can evolve behavior in one place (serialization, retry policy, key conventions, fallbacks).
+Use this abstraction for Redis-backed features so behavior stays centralized (serialization, retry policy, key conventions, fallbacks).
 
 ## ONNX Runtime integration (no Python runtime needed)
 
@@ -199,7 +236,7 @@ This project now supports a seeded intent classification proof-of-concept:
 }
 ```
 
-Use `VectorStore:Provider = InMemory` for local POC and switch to `Qdrant` when cloud integration is ready.
+Set `VectorStore:Provider` via environment variables and keep it as `Qdrant` for this env-first setup.
 For Qdrant API key, prefer environment variable `Qdrant__ApiKey` instead of committing secrets.
 
 ### Embedding model selection

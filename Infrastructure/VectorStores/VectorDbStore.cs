@@ -46,7 +46,7 @@ namespace testapi1.Infrastructure.VectorStores
                 JsonOptions,
                 cancellationToken);
 
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessOrThrow(response, "upsert", cancellationToken);
         }
 
         public async Task<IReadOnlyList<VectorSearchResult>> QuerySimilar(float[] embedding, int limit, CancellationToken cancellationToken = default)
@@ -59,7 +59,7 @@ namespace testapi1.Infrastructure.VectorStores
                 JsonOptions,
                 cancellationToken);
 
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessOrThrow(response, "search", cancellationToken);
 
             var data = await response.Content.ReadFromJsonAsync<QdrantSearchResponse>(JsonOptions, cancellationToken);
             if (data?.Result is null)
@@ -88,7 +88,22 @@ namespace testapi1.Infrastructure.VectorStores
                 JsonOptions,
                 cancellationToken);
 
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessOrThrow(response, "delete", cancellationToken);
+        }
+
+        private static async Task EnsureSuccessOrThrow(
+            HttpResponseMessage response,
+            string operation,
+            CancellationToken cancellationToken)
+        {
+            if (response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new HttpRequestException(
+                $"Qdrant {operation} failed: {(int)response.StatusCode} ({response.ReasonPhrase}). Body: {body}");
         }
 
         private static Dictionary<string, object> BuildPayload(VectorRecord record)
