@@ -32,7 +32,7 @@ if (!string.IsNullOrWhiteSpace(redisConnection))
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = redisConnection;
-        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "redis-server:";
+        options.InstanceName = builder.Configuration["Redis:InstanceName"] ?? "testapi1:";
     });
 }
 else
@@ -63,6 +63,8 @@ builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
 builder.Services.AddSingleton<IRemoteDependencyProbe, RemoteDependencyProbeService>();
 builder.Services.AddSingleton<ConfigurableOnnxEmbeddingService>();
 builder.Services.AddSingleton<IEmbeddingService>(sp => sp.GetRequiredService<ConfigurableOnnxEmbeddingService>());
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Postgres")));
 
 var vectorProvider = builder.Configuration["VectorStore:Provider"] ?? "InMemory";
 if (string.Equals(vectorProvider, "Qdrant", StringComparison.OrdinalIgnoreCase))
@@ -111,26 +113,9 @@ builder.Services.AddSingleton<LlmService>();
 
 builder.Services.AddSingleton<ILLMService>(sp => sp.GetRequiredService<LlmService>());
 builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
-builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessionStore>();
+builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
 builder.Services.AddSingleton<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
-builder.Services.AddSingleton<IGameProgressionService, GameProgressionService>();
-
-// ---------- Postgres ----------
-
-var postgresConnection = builder.Configuration.GetConnectionString("Postgres");
-if (!string.IsNullOrWhiteSpace(postgresConnection))
-{
-    builder.Services.AddDbContext<AppDbContext>(options =>
-        options.UseNpgsql(postgresConnection));
-
-    // Replace InMemoryProgressionSessionStore with Postgres-backed store
-    builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
-}
-else
-{
-    // Fallback to in-memory if no Postgres connection configured
-    builder.Services.AddSingleton<IProgressionSessionStore, InMemoryProgressionSessionStore>();
-}
+builder.Services.AddScoped<IGameProgressionService, GameProgressionService>();
 // ---------- BUILD APP ----------
 
 var app = builder.Build();

@@ -24,6 +24,19 @@ namespace testapi1.Infrastructure.Persistence
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // ── Explicit PKs for entities that don't use EF's default naming convention ──
+            modelBuilder.Entity<ActionCatalog>()
+                .HasKey(a => a.ActionId);
+
+            modelBuilder.Entity<DialogueTemplate>()
+                .HasKey(d => d.TemplateId);
+
+            modelBuilder.Entity<LoreDoc>()
+                .HasKey(l => l.DocId);
+
+            modelBuilder.Entity<LoreChunk>()
+                .HasKey(c => c.ChunkId);
+
             // ── PLAYER_NPC_STATE — composite PK ──
             modelBuilder.Entity<PlayerNpcState>()
                 .HasKey(p => new { p.PlayerId, p.NpcId });

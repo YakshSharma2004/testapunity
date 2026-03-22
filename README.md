@@ -6,7 +6,7 @@ This API now supports remote-first dependency targets for Redis, Qdrant, and Pos
 
 - Redis cache path is controlled by `ConnectionStrings:Redis`.
 - Qdrant vector path remains `IVectorStore` (`VectorStore:Provider=Qdrant`) and is controlled by `Qdrant:BaseUrl`.
-- Postgres is connectivity-probe only in this phase, controlled by `ConnectionStrings:Postgres`.
+- Postgres progression session persistence is controlled by `ConnectionStrings:Postgres` and is required.
 - A dependency probe endpoint is available at `GET /api/v1/infra/dependencies`.
 - In `Development`, a `.env` file in the repo root is auto-loaded at startup (without overriding already-set environment variables).
 - External dependency endpoints are env-first and validated at startup (`.env` or process environment variables).
@@ -28,6 +28,21 @@ Required keys are:
 
 Use `.env.laptop2.example` as the template for Docker Compose secrets/credentials on Laptop 2.
 
+## Postgres migrations (manual)
+
+Run these commands from the repo root:
+
+```bash
+docker compose up -d postgres
+dotnet tool restore
+dotnet tool run dotnet-ef migrations add InitialCreateAllDomain
+dotnet tool run dotnet-ef database update
+```
+
+This project intentionally does not run automatic EF migrations at API startup.
+If PostgreSQL is also installed on your host machine, use a non-default container host port
+(`55432:5432`) and set `CONNECTIONSTRINGS__POSTGRES` to `Port=55432`.
+
 ## Redis container + API integration plan
 
 1. Keep Redis optional so the API can run even when the container is stopped.
@@ -40,12 +55,10 @@ Use `.env.laptop2.example` as the template for Docker Compose secrets/credential
 This API uses Redis for intent caching. Configure the connection string via
 `ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`.
 
-Current defaults are resilient to Redis being offline at API startup:
+Recommended `.env` value (resilient if Redis starts after API):
 
-```json
-"ConnectionStrings": {
-  "Redis": "localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000"
-}
+```env
+CONNECTIONSTRINGS__REDIS=localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000
 ```
 
 ## Run Redis on-demand with Docker Compose
@@ -195,11 +208,10 @@ var logits = outputs["logits"];
 
 If you want GPU acceleration, swap the runtime package to the GPU variant and update `SessionOptions` accordingly. Start with CPU first to validate correctness.
 
-## Intent classification POC (seeded cosine similarity)
+## Intent classification POC (cosine similarity)
 
-This project now supports a seeded intent classification proof-of-concept:
+This project supports cosine-similarity intent classification with vectors stored in the configured vector store:
 
-- On startup, a hosted service embeds fixed seed utterances and upserts them into the configured `IVectorStore`.
 - The classifier embeds user text, runs top-k similarity search, and picks the highest-scoring intent.
 - A confidence threshold allows fallback to `unknown` for low-similarity queries.
 
@@ -227,7 +239,7 @@ This project now supports a seeded intent classification proof-of-concept:
   "IncludeDebugNotes": true
 },
 "VectorStore": {
-  "Provider": "InMemory"
+  "Provider": "Qdrant"
 },
 "Qdrant": {
   "BaseUrl": "https://your-qdrant-instance.cloud.qdrant.io",
@@ -259,7 +271,7 @@ The progression engine currently ships with one authored case graph (`dylan-inte
 - evidence detection from evidence-style turns (`E1`, `E2`, `E4`, `E5`, `E7`),
 - deterministic transition rules with terminal endings.
 
-Session state is stored in-memory with TTL configured by:
+Progression session state is stored in Postgres. Session TTL behavior is configured by:
 
 ```json
 "Progression": {
