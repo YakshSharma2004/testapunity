@@ -1,5 +1,5 @@
 using testapi1.Application;
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 using testapi1.Domain.Progression;
 
 namespace testapi1.Services.Progression

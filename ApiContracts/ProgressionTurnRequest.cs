@@ -1,4 +1,4 @@
-namespace testapi1.Contracts
+namespace testapi1.ApiContracts
 {
     public sealed class ProgressionTurnRequest
     {
@@ -6,5 +6,6 @@ namespace testapi1.Contracts
         public string text { get; set; } = "";
         public string npcId { get; set; } = "";
         public string contextKey { get; set; } = "";
+        public List<string> discussedClueIds { get; set; } = new();
     }
 }

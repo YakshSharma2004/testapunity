@@ -56,30 +56,26 @@ namespace testapi1.Services.Progression
                 ProgressionStateId.BuildingCase,
                 ProgressionEventType.PresentEvidence,
                 ProgressionStateId.ConfessionWindow,
-                "pawn-receipt-confession-window",
-                Guard: static (state, ev) =>
-                    ev.EvidenceId == EvidenceId.E5PawnReceipt &&
-                    HasEvidence(state, EvidenceId.E1WindowGlassPattern, EvidenceId.E2SafeNoDamage, EvidenceId.E4AlarmLog, EvidenceId.E5PawnReceipt) &&
-                    state.TrustScore >= state.ShutdownScore),
+                "evidence-to-confession-window"),
 
             new(
                 ProgressionStateId.ConfessionWindow,
                 ProgressionEventType.AskOpenQuestion,
                 ProgressionStateId.Confession,
                 "confession-open-question",
-                Guard: static (state, _) => state.PresentedEvidence.Contains(EvidenceId.E5PawnReceipt)),
+                Guard: static (state, _) => state.CanConfess),
             new(
                 ProgressionStateId.ConfessionWindow,
                 ProgressionEventType.Empathy,
                 ProgressionStateId.Confession,
                 "confession-empathy",
-                Guard: static (state, _) => state.PresentedEvidence.Contains(EvidenceId.E5PawnReceipt)),
+                Guard: static (state, _) => state.CanConfess),
             new(
                 ProgressionStateId.ConfessionWindow,
                 ProgressionEventType.Silence,
                 ProgressionStateId.Confession,
                 "confession-silence",
-                Guard: static (state, _) => state.PresentedEvidence.Contains(EvidenceId.E5PawnReceipt))
+                Guard: static (state, _) => state.CanConfess)
         };
 
         public ProgressionSessionState CreateInitialState(string sessionId, string caseId, string npcId, DateTimeOffset nowUtc)
@@ -95,6 +91,12 @@ namespace testapi1.Services.Progression
                 IsTerminal: false,
                 Ending: CaseEndingType.None,
                 PresentedEvidence: new List<EvidenceId>(),
+                DiscoveredClues: new List<ClueId>(),
+                DiscussedClues: new List<ClueId>(),
+                ClueClickHistory: new List<ClueClickHistoryEntry>(),
+                ComposureState: ComposureState.Calm,
+                ProofTier: ProofTier.None,
+                CanConfess: false,
                 History: new List<ProgressionHistoryEntry>(),
                 LastTransitionReason: "session-started",
                 CreatedAtUtc: nowUtc,
@@ -265,10 +267,10 @@ namespace testapi1.Services.Progression
 
             if (progressionEvent.EventType == ProgressionEventType.CloseInterrogation)
             {
-                if (HasEvidence(state, EvidenceId.E1WindowGlassPattern, EvidenceId.E2SafeNoDamage, EvidenceId.E4AlarmLog, EvidenceId.E5PawnReceipt))
+                if (state.ProofTier is ProofTier.Minimum or ProofTier.Full)
                 {
                     transitioned = state.State != ProgressionStateId.GuiltyNoConfession;
-                    reason = "evidence-chain-complete-no-confession";
+                    reason = "proof-threshold-met-no-confession";
                     return state with { State = ProgressionStateId.GuiltyNoConfession };
                 }
 
@@ -279,7 +281,7 @@ namespace testapi1.Services.Progression
 
             if (progressionEvent.EventType == ProgressionEventType.Intimidate &&
                 state.ShutdownScore >= 3 &&
-                HasEvidence(state, EvidenceId.E1WindowGlassPattern, EvidenceId.E2SafeNoDamage, EvidenceId.E4AlarmLog, EvidenceId.E5PawnReceipt))
+                state.ProofTier is ProofTier.Minimum or ProofTier.Full)
             {
                 transitioned = state.State != ProgressionStateId.GuiltyNoConfession;
                 reason = "shutdown-triggered-no-confession-ending";
@@ -325,10 +327,5 @@ namespace testapi1.Services.Progression
             };
         }
 
-        private static bool HasEvidence(ProgressionSessionState state, params EvidenceId[] evidenceIds)
-        {
-            var presented = state.PresentedEvidence.ToHashSet();
-            return evidenceIds.All(presented.Contains);
-        }
     }
 }

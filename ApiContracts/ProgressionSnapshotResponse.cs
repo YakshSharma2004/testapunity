@@ -1,4 +1,4 @@
-namespace testapi1.Contracts
+namespace testapi1.ApiContracts
 {
     public sealed class ProgressionSnapshotResponse
     {
@@ -13,6 +13,11 @@ namespace testapi1.Contracts
         public string ending { get; set; } = "";
         public List<string> allowedIntents { get; set; } = new();
         public List<string> evidencePresented { get; set; } = new();
+        public List<string> discoveredClueIds { get; set; } = new();
+        public List<string> discussedClueIds { get; set; } = new();
+        public bool canConfess { get; set; }
+        public string proofTier { get; set; } = "";
+        public string composureState { get; set; } = "";
         public string lastTransitionReason { get; set; } = "";
     }
 }

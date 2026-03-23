@@ -10,6 +10,7 @@ namespace testapi1.Infrastructure.Persistence
 {
     public sealed class PostgresProgressionSessionStore : IProgressionSessionStore
     {
+        private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
         private readonly AppDbContext _db;
         private readonly IOptionsMonitor<ProgressionOptions> _options;
 
@@ -66,8 +67,18 @@ namespace testapi1.Infrastructure.Persistence
                 existing.IsTerminal = state.IsTerminal;
                 existing.Ending = state.Ending.ToString();
                 existing.PresentedEvidenceJson = JsonSerializer.Serialize(
-                    state.PresentedEvidence.Select(e => e.ToString()));
-                existing.HistoryJson = JsonSerializer.Serialize(state.History);
+                    state.PresentedEvidence.Select(e => e.ToString()), JsonOptions);
+                existing.DiscoveredClueIdsJson = JsonSerializer.Serialize(
+                    state.DiscoveredClues.Select(ClueCatalog.ToKey), JsonOptions);
+                existing.DiscussedClueIdsJson = JsonSerializer.Serialize(
+                    state.DiscussedClues.Select(ClueCatalog.ToKey), JsonOptions);
+                existing.ClueClickHistoryJson = JsonSerializer.Serialize(
+                    state.ClueClickHistory.Select(MapToStoredClueClick),
+                    JsonOptions);
+                existing.ComposureState = state.ComposureState.ToString();
+                existing.ProofTier = state.ProofTier.ToString();
+                existing.CanConfess = state.CanConfess;
+                existing.HistoryJson = JsonSerializer.Serialize(state.History, JsonOptions);
                 existing.LastTransitionReason = state.LastTransitionReason;
                 existing.UpdatedAtUtc = state.UpdatedAtUtc;
                 existing.ExpiresAtUtc = expiresAt;
@@ -92,8 +103,39 @@ namespace testapi1.Infrastructure.Persistence
 
         private static ProgressionSessionState MapToState(ProgressionSessionEntity e)
         {
-            var evidence = JsonSerializer.Deserialize<List<string>>(e.PresentedEvidenceJson) ?? new();
-            var history = JsonSerializer.Deserialize<List<ProgressionHistoryEntry>>(e.HistoryJson) ?? new();
+            var evidence = DeserializeList<string>(e.PresentedEvidenceJson);
+            var discovered = DeserializeList<string>(e.DiscoveredClueIdsJson);
+            var discussed = DeserializeList<string>(e.DiscussedClueIdsJson);
+            var clueClicks = DeserializeList<StoredClueClickHistoryEntry>(e.ClueClickHistoryJson);
+            var history = DeserializeList<ProgressionHistoryEntry>(e.HistoryJson);
+
+            var discoveredClues = discovered
+                .Select(item => ClueCatalog.TryParseKey(item, out var clueId) ? clueId : (ClueId?)null)
+                .Where(item => item.HasValue)
+                .Select(item => item!.Value)
+                .Distinct()
+                .ToList();
+
+            var discussedClues = discussed
+                .Select(item => ClueCatalog.TryParseKey(item, out var clueId) ? clueId : (ClueId?)null)
+                .Where(item => item.HasValue)
+                .Select(item => item!.Value)
+                .Distinct()
+                .ToList();
+
+            var mappedClicks = clueClicks
+                .Select(MapToDomainClueClick)
+                .Where(item => item is not null)
+                .Select(item => item!)
+                .ToList();
+
+            var composureState = Enum.TryParse<ComposureState>(e.ComposureState, out var parsedComposure)
+                ? parsedComposure
+                : ComposureState.Calm;
+
+            var proofTier = Enum.TryParse<ProofTier>(e.ProofTier, out var parsedProofTier)
+                ? parsedProofTier
+                : ProofTier.None;
 
             return new ProgressionSessionState(
                 SessionId: e.SessionId,
@@ -106,6 +148,12 @@ namespace testapi1.Infrastructure.Persistence
                 IsTerminal: e.IsTerminal,
                 Ending: Enum.Parse<CaseEndingType>(e.Ending),
                 PresentedEvidence: evidence.Select(Enum.Parse<EvidenceId>).ToList(),
+                DiscoveredClues: discoveredClues,
+                DiscussedClues: discussedClues,
+                ClueClickHistory: mappedClicks,
+                ComposureState: composureState,
+                ProofTier: proofTier,
+                CanConfess: e.CanConfess,
                 History: history,
                 LastTransitionReason: e.LastTransitionReason,
                 CreatedAtUtc: e.CreatedAtUtc,
@@ -126,12 +174,72 @@ namespace testapi1.Infrastructure.Persistence
                 IsTerminal = s.IsTerminal,
                 Ending = s.Ending.ToString(),
                 PresentedEvidenceJson = JsonSerializer.Serialize(
-                s.PresentedEvidence.Select(e => e.ToString())),
-                HistoryJson = JsonSerializer.Serialize(s.History),
+                s.PresentedEvidence.Select(e => e.ToString()), JsonOptions),
+                DiscoveredClueIdsJson = JsonSerializer.Serialize(
+                s.DiscoveredClues.Select(ClueCatalog.ToKey), JsonOptions),
+                DiscussedClueIdsJson = JsonSerializer.Serialize(
+                s.DiscussedClues.Select(ClueCatalog.ToKey), JsonOptions),
+                ClueClickHistoryJson = JsonSerializer.Serialize(
+                s.ClueClickHistory.Select(MapToStoredClueClick), JsonOptions),
+                ComposureState = s.ComposureState.ToString(),
+                ProofTier = s.ProofTier.ToString(),
+                CanConfess = s.CanConfess,
+                HistoryJson = JsonSerializer.Serialize(s.History, JsonOptions),
                 LastTransitionReason = s.LastTransitionReason,
                 CreatedAtUtc = s.CreatedAtUtc,
                 UpdatedAtUtc = s.UpdatedAtUtc,
                 ExpiresAtUtc = expiresAt
             };
+
+        private static StoredClueClickHistoryEntry MapToStoredClueClick(ClueClickHistoryEntry entry)
+        {
+            return new StoredClueClickHistoryEntry(
+                ClueId: ClueCatalog.ToKey(entry.ClueId),
+                IsFirstDiscovery: entry.IsFirstDiscovery,
+                Source: entry.Source,
+                ClueName: entry.ClueName,
+                OccurredAtUtc: entry.OccurredAtUtc);
+        }
+
+        private static ClueClickHistoryEntry? MapToDomainClueClick(StoredClueClickHistoryEntry entry)
+        {
+            if (!ClueCatalog.TryParseKey(entry.ClueId, out var clueId))
+            {
+                return null;
+            }
+
+            return new ClueClickHistoryEntry(
+                ClueId: clueId,
+                IsFirstDiscovery: entry.IsFirstDiscovery,
+                Source: entry.Source ?? string.Empty,
+                ClueName: string.IsNullOrWhiteSpace(entry.ClueName)
+                    ? ClueCatalog.ToDisplayName(clueId)
+                    : entry.ClueName,
+                OccurredAtUtc: entry.OccurredAtUtc);
+        }
+
+        private sealed record StoredClueClickHistoryEntry(
+            string ClueId,
+            bool IsFirstDiscovery,
+            string Source,
+            string ClueName,
+            DateTimeOffset OccurredAtUtc);
+
+        private static List<T> DeserializeList<T>(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new List<T>();
+            }
+
+            try
+            {
+                return JsonSerializer.Deserialize<List<T>>(json, JsonOptions) ?? new List<T>();
+            }
+            catch (JsonException)
+            {
+                return new List<T>();
+            }
+        }
     }
 }

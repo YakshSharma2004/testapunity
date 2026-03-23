@@ -32,6 +32,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="testapi1.Tests\**\*.cs" />
+    <None Include="testapi1.Tests\**\*" Exclude="testapi1.Tests\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="models\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

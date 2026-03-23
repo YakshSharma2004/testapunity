@@ -1,6 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 
 namespace testapi1.Application
 {

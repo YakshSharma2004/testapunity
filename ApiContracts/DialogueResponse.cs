@@ -1,4 +1,4 @@
-﻿namespace testapi1.Contracts
+namespace testapi1.ApiContracts
 {
     public class DialogueResponse
     {

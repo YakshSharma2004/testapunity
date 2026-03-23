@@ -1,4 +1,4 @@
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 
 namespace testapi1.Application
 {
@@ -6,6 +6,7 @@ namespace testapi1.Application
     {
         Task<StartProgressionResponse> StartSessionAsync(StartProgressionRequest request, CancellationToken cancellationToken = default);
         Task<ProgressionTurnResponse?> ApplyTurnAsync(ProgressionTurnRequest request, CancellationToken cancellationToken = default);
+        Task<ProgressionClueClickResponse?> ApplyClueClickAsync(ProgressionClueClickRequest request, CancellationToken cancellationToken = default);
         Task<ProgressionSnapshotResponse?> GetSnapshotAsync(string sessionId, CancellationToken cancellationToken = default);
     }
 }

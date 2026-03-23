@@ -13,6 +13,12 @@ namespace testapi1.Infrastructure.Persistence
         public bool IsTerminal { get; set; }
         public string Ending { get; set; } = default!;         
         public string PresentedEvidenceJson { get; set; } = "[]"; 
+        public string DiscoveredClueIdsJson { get; set; } = "[]";
+        public string DiscussedClueIdsJson { get; set; } = "[]";
+        public string ClueClickHistoryJson { get; set; } = "[]";
+        public string ComposureState { get; set; } = "Calm";
+        public string ProofTier { get; set; } = "None";
+        public bool CanConfess { get; set; }
         public string HistoryJson { get; set; } = "[]";         
         public string LastTransitionReason { get; set; } = default!;
         public DateTimeOffset CreatedAtUtc { get; set; }

@@ -129,6 +129,8 @@ namespace testapi1.Infrastructure.Persistence
                 entity.Property(e => e.SessionId).HasMaxLength(100);
                 entity.Property(e => e.State).HasMaxLength(50);
                 entity.Property(e => e.Ending).HasMaxLength(50);
+                entity.Property(e => e.ComposureState).HasMaxLength(50);
+                entity.Property(e => e.ProofTier).HasMaxLength(50);
                 entity.HasIndex(e => e.ExpiresAtUtc);
             });
         }

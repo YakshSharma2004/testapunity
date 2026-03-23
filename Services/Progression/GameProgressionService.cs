@@ -1,6 +1,7 @@
 using testapi1.Application;
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 using testapi1.Domain.Progression;
+using Microsoft.Extensions.Options;
 
 namespace testapi1.Services.Progression
 {
@@ -11,19 +12,22 @@ namespace testapi1.Services.Progression
         private readonly IIntentClassifier _intentClassifier;
         private readonly IIntentToProgressionEventMapper _eventMapper;
         private readonly ITextNormalizer _normalizer;
+        private readonly IOptionsMonitor<ProgressionOptions> _progressionOptions;
 
         public GameProgressionService(
             IGameProgressionEngine engine,
             IProgressionSessionStore sessionStore,
             IIntentClassifier intentClassifier,
             IIntentToProgressionEventMapper eventMapper,
-            ITextNormalizer normalizer)
+            ITextNormalizer normalizer,
+            IOptionsMonitor<ProgressionOptions> progressionOptions)
         {
             _engine = engine;
             _sessionStore = sessionStore;
             _intentClassifier = intentClassifier;
             _eventMapper = eventMapper;
             _normalizer = normalizer;
+            _progressionOptions = progressionOptions;
         }
 
         public async Task<StartProgressionResponse> StartSessionAsync(
@@ -32,8 +36,8 @@ namespace testapi1.Services.Progression
         {
             var nowUtc = DateTimeOffset.UtcNow;
             var sessionId = string.IsNullOrWhiteSpace(request.sessionId)
-                ? Guid.NewGuid().ToString("N")
-                : request.sessionId.Trim();
+                ? ProgressionSessionId.NewId()
+                : request.sessionId.Trim().ToLowerInvariant();
 
             var caseId = string.IsNullOrWhiteSpace(request.caseId)
                 ? "dylan-interrogation"
@@ -43,6 +47,7 @@ namespace testapi1.Services.Progression
                 : request.npcId.Trim();
 
             var initialState = _engine.CreateInitialState(sessionId, caseId, npcId, nowUtc);
+            initialState = CaseProgressionEvaluator.Recalculate(initialState, GetConfessionRequiredClues());
             await _sessionStore.SetAsync(initialState, cancellationToken);
 
             return new StartProgressionResponse
@@ -72,20 +77,75 @@ namespace testapi1.Services.Progression
             var intent = await _intentClassifier.ClassifyAsync(intentRequest, cancellationToken);
             var normalizedText = _normalizer.NormalizeForMatch(intentRequest.Text);
             var progressionEvent = _eventMapper.Map(intentRequest, intent, normalizedText, DateTimeOffset.UtcNow);
-            var transition = _engine.Apply(session, progressionEvent);
+            var sessionWithDiscussion = ApplyDiscussedClues(session, request.discussedClueIds, progressionEvent.OccurredAtUtc);
+            var sessionWithGateUpdates = CaseProgressionEvaluator.Recalculate(sessionWithDiscussion, GetConfessionRequiredClues());
+            var transition = _engine.Apply(sessionWithGateUpdates, progressionEvent);
+            var finalState = CaseProgressionEvaluator.Recalculate(transition.State, GetConfessionRequiredClues());
 
-            await _sessionStore.SetAsync(transition.State, cancellationToken);
+            await _sessionStore.SetAsync(finalState, cancellationToken);
 
             return new ProgressionTurnResponse
             {
-                sessionId = transition.State.SessionId,
+                sessionId = finalState.SessionId,
                 intent = intent.intent,
                 confidence = intent.confidence,
                 eventType = progressionEvent.EventType.ToString(),
                 evidenceId = progressionEvent.EvidenceId?.ToString() ?? string.Empty,
                 transitioned = transition.Transitioned,
                 transitionReason = transition.Reason,
-                snapshot = ToSnapshot(transition.State)
+                snapshot = ToSnapshot(finalState)
+            };
+        }
+
+        public async Task<ProgressionClueClickResponse?> ApplyClueClickAsync(
+            ProgressionClueClickRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var session = await _sessionStore.GetAsync(request.sessionId, cancellationToken);
+            if (session is null)
+            {
+                return null;
+            }
+
+            if (!ClueCatalog.TryParseKey(request.clueId, out var clueId))
+            {
+                throw new InvalidOperationException($"Unknown clueId '{request.clueId}'.");
+            }
+
+            var nowUtc = DateTimeOffset.UtcNow;
+            var discovered = session.DiscoveredClues.ToHashSet();
+            var isFirstDiscovery = discovered.Add(clueId);
+
+            var clueClicks = session.ClueClickHistory.ToList();
+            clueClicks.Add(new ClueClickHistoryEntry(
+                ClueId: clueId,
+                IsFirstDiscovery: isFirstDiscovery,
+                Source: request.source ?? string.Empty,
+                ClueName: string.IsNullOrWhiteSpace(request.clueName)
+                    ? ClueCatalog.ToDisplayName(clueId)
+                    : request.clueName.Trim(),
+                OccurredAtUtc: nowUtc));
+
+            var updatedState = session with
+            {
+                DiscoveredClues = discovered.ToList(),
+                ClueClickHistory = clueClicks,
+                LastTransitionReason = isFirstDiscovery ? "clue-discovered" : "duplicate-click",
+                UpdatedAtUtc = nowUtc
+            };
+
+            updatedState = CaseProgressionEvaluator.Recalculate(updatedState, GetConfessionRequiredClues());
+            await _sessionStore.SetAsync(updatedState, cancellationToken);
+
+            return new ProgressionClueClickResponse
+            {
+                sessionId = updatedState.SessionId,
+                clueId = ClueCatalog.ToKey(clueId),
+                unlockTopic = ClueCatalog.ToUnlockTopic(clueId),
+                isFirstDiscovery = isFirstDiscovery,
+                applied = isFirstDiscovery,
+                reason = isFirstDiscovery ? "clue-discovered" : "duplicate-click",
+                snapshot = ToSnapshot(updatedState)
             };
         }
 
@@ -112,7 +172,73 @@ namespace testapi1.Services.Progression
                 ending = state.Ending.ToString(),
                 allowedIntents = _engine.GetAllowedIntents(state).ToList(),
                 evidencePresented = state.PresentedEvidence.Select(item => item.ToString()).OrderBy(value => value).ToList(),
+                discoveredClueIds = state.DiscoveredClues.Select(ClueCatalog.ToKey).OrderBy(value => value).ToList(),
+                discussedClueIds = state.DiscussedClues.Select(ClueCatalog.ToKey).OrderBy(value => value).ToList(),
+                canConfess = state.CanConfess,
+                proofTier = state.ProofTier.ToString(),
+                composureState = state.ComposureState.ToString(),
                 lastTransitionReason = state.LastTransitionReason
+            };
+        }
+
+        private IReadOnlyCollection<ClueId> GetConfessionRequiredClues()
+        {
+            var configured = _progressionOptions.CurrentValue.ConfessionRequiredClues ?? new List<string>();
+            var parsed = configured
+                .Select(value => ClueCatalog.TryParseKey(value, out var clueId) ? clueId : (ClueId?)null)
+                .Where(value => value.HasValue)
+                .Select(value => value!.Value)
+                .Distinct()
+                .ToList();
+
+            if (parsed.Count > 0)
+            {
+                return parsed;
+            }
+
+            return new[]
+            {
+                ClueId.ElsaEmailDraft,
+                ClueId.PayrollReport,
+                ClueId.MeetingNote,
+                ClueId.EntryLog,
+                ClueId.PinNote,
+                ClueId.CleanupItem,
+                ClueId.WeaponFound,
+                ClueId.FlashDrive
+            };
+        }
+
+        private static ProgressionSessionState ApplyDiscussedClues(
+            ProgressionSessionState state,
+            IReadOnlyCollection<string>? discussedClueIds,
+            DateTimeOffset nowUtc)
+        {
+            if (discussedClueIds is null || discussedClueIds.Count == 0)
+            {
+                return state;
+            }
+
+            var discussed = state.DiscussedClues.ToHashSet();
+            var changed = false;
+
+            foreach (var token in discussedClueIds)
+            {
+                if (ClueCatalog.TryParseKey(token, out var clueId))
+                {
+                    changed |= discussed.Add(clueId);
+                }
+            }
+
+            if (!changed)
+            {
+                return state;
+            }
+
+            return state with
+            {
+                DiscussedClues = discussed.ToList(),
+                UpdatedAtUtc = nowUtc
             };
         }
     }
