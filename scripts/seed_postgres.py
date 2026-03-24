@@ -32,6 +32,7 @@ APP_TABLES_IN_RESET_ORDER = [
     "LoreChunks",
     "LoreDocs",
     "PlayerNpcStates",
+    "ProgressionStateAllowedActions",
     "ActionCatalog",
     "ProgressionSessions",
     "Players",
@@ -45,6 +46,7 @@ TRUNCATE TABLE
     "LoreChunks",
     "LoreDocs",
     "PlayerNpcStates",
+    "ProgressionStateAllowedActions",
     "ActionCatalog",
     "ProgressionSessions",
     "Players",
@@ -208,14 +210,77 @@ def build_seed_tables() -> list[SeedTable]:
     session_id = "ps_11111111111111111111111111111111"
 
     action_rows = [
-        (1, "ASK_OPEN_QUESTION", "ASK_OPEN_QUESTION", "Ask open-ended questions to gather broad context."),
-        (2, "ASK_TIMELINE", "ASK_TIMELINE", "Probe chronology and sequence of events."),
-        (3, "EMPATHY", "EMPATHY", "Use rapport-building language to lower resistance."),
-        (4, "PRESENT_EVIDENCE", "PRESENT_EVIDENCE", "Present concrete evidence and ask for explanation."),
-        (5, "CONTRADICTION", "CONTRADICTION", "Challenge conflicting statements directly."),
-        (6, "SILENCE", "SILENCE", "Apply deliberate silence pressure."),
-        (7, "INTIMIDATE", "INTIMIDATE", "Apply pressure through firm and forceful framing."),
-        (8, "CLOSE_INTERROGATION", "CLOSE_INTERROGATION", "Attempt to close or terminate the interrogation."),
+        (
+            1,
+            "ASK_OPEN_QUESTION",
+            "ASK_OPEN_QUESTION",
+            "AskOpenQuestion",
+            True,
+            "Ask open-ended questions to gather broad context.",
+        ),
+        (2, "ASK_TIMELINE", "ASK_TIMELINE", "AskTimeline", True, "Probe chronology and sequence of events."),
+        (3, "EMPATHY", "EMPATHY", "Empathy", True, "Use rapport-building language to lower resistance."),
+        (
+            4,
+            "PRESENT_EVIDENCE",
+            "PRESENT_EVIDENCE",
+            "PresentEvidence",
+            True,
+            "Present concrete evidence and ask for explanation.",
+        ),
+        (
+            5,
+            "CONTRADICTION",
+            "CONTRADICTION",
+            "Contradiction",
+            True,
+            "Challenge conflicting statements directly.",
+        ),
+        (6, "SILENCE", "SILENCE", "Silence", True, "Apply deliberate silence pressure."),
+        (
+            7,
+            "INTIMIDATE",
+            "INTIMIDATE",
+            "Intimidate",
+            True,
+            "Apply pressure through firm and forceful framing.",
+        ),
+        (
+            8,
+            "CLOSE_INTERROGATION",
+            "CLOSE_INTERROGATION",
+            "CloseInterrogation",
+            True,
+            "Attempt to close or terminate the interrogation.",
+        ),
+    ]
+
+    allowed_actions_rows = [
+        ("Intro", 1),
+        ("Intro", 2),
+        ("Intro", 3),
+        ("Intro", 4),
+        ("Intro", 5),
+        ("Intro", 6),
+        ("Intro", 7),
+        ("InformationGathering", 1),
+        ("InformationGathering", 2),
+        ("InformationGathering", 3),
+        ("InformationGathering", 4),
+        ("InformationGathering", 6),
+        ("BuildingCase", 1),
+        ("BuildingCase", 2),
+        ("BuildingCase", 3),
+        ("BuildingCase", 4),
+        ("BuildingCase", 5),
+        ("BuildingCase", 6),
+        ("BuildingCase", 7),
+        ("BuildingCase", 8),
+        ("ConfessionWindow", 1),
+        ("ConfessionWindow", 3),
+        ("ConfessionWindow", 5),
+        ("ConfessionWindow", 6),
+        ("ConfessionWindow", 8),
     ]
 
     clue_click_history = [
@@ -257,13 +322,14 @@ def build_seed_tables() -> list[SeedTable]:
             name="Npcs",
             insert_sql="""
                 INSERT INTO "Npcs"
-                ("NpcId", "Name", "Archetype", "BaseFriendliness", "BasePatience",
+                ("NpcId", "NpcCode", "Name", "Archetype", "BaseFriendliness", "BasePatience",
                  "BaseCuriosity", "BaseOpenness", "BaseConfidence", "CreatedAt")
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
             """.strip(),
             rows=[
                 (
                     1,
+                    "dylan",
                     "Dylan Cross",
                     "Defensive Suspect",
                     Decimal("0.35"),
@@ -299,10 +365,19 @@ def build_seed_tables() -> list[SeedTable]:
         SeedTable(
             name="ActionCatalog",
             insert_sql="""
-                INSERT INTO "ActionCatalog" ("ActionId", "Code", "IntentTag", "Description")
-                VALUES (%s, %s, %s, %s);
+                INSERT INTO "ActionCatalog"
+                ("ActionId", "Code", "IntentTag", "ProgressionEventType", "IsEnabled", "Description")
+                VALUES (%s, %s, %s, %s, %s, %s);
             """.strip(),
             rows=action_rows,
+        ),
+        SeedTable(
+            name="ProgressionStateAllowedActions",
+            insert_sql="""
+                INSERT INTO "ProgressionStateAllowedActions" ("State", "ActionId")
+                VALUES (%s, %s);
+            """.strip(),
+            rows=allowed_actions_rows,
         ),
         SeedTable(
             name="DialogueTemplates",
@@ -325,13 +400,17 @@ def build_seed_tables() -> list[SeedTable]:
         SeedTable(
             name="LoreDocs",
             insert_sql="""
-                INSERT INTO "LoreDocs" ("DocId", "NpcId", "Title", "Body", "UpdatedAt")
-                VALUES (%s, %s, %s, %s, %s);
+                INSERT INTO "LoreDocs"
+                ("DocId", "NpcId", "DocKey", "Version", "IsActive", "Title", "Body", "UpdatedAt")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
             """.strip(),
             rows=[
                 (
                     1,
                     None,
+                    "case_briefing",
+                    1,
+                    True,
                     "Case Briefing: Elsa Voss Homicide",
                     "Victim found in office after hours. Signs point to staged cleanup and selective access.",
                     ts,
@@ -339,6 +418,9 @@ def build_seed_tables() -> list[SeedTable]:
                 (
                     2,
                     1,
+                    "dylan_timeline",
+                    1,
+                    True,
                     "Dylan Timeline Notes",
                     "Dylan claims limited contact window, but entry and meeting signals overlap with victim timeline.",
                     ts,
@@ -346,6 +428,9 @@ def build_seed_tables() -> list[SeedTable]:
                 (
                     3,
                     1,
+                    "dylan_motive",
+                    1,
+                    True,
                     "Dylan Motive Indicators",
                     "Financial pressure and workplace conflict may indicate motive, but direct intent remains contested.",
                     ts,
@@ -355,16 +440,17 @@ def build_seed_tables() -> list[SeedTable]:
         SeedTable(
             name="LoreChunks",
             insert_sql="""
-                INSERT INTO "LoreChunks" ("ChunkId", "DocId", "ChunkText", "Embedding")
-                VALUES (%s, %s, %s, %s);
+                INSERT INTO "LoreChunks"
+                ("ChunkId", "DocId", "ChunkKey", "ChunkOrder", "IsActive", "UpdatedAt", "ChunkText", "Embedding")
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
             """.strip(),
             rows=[
-                (1, 1, "Elsa was found after a narrow overnight window with limited building access.", b""),
-                (2, 1, "Investigators recovered indicators of attempted scene cleanup.", b""),
-                (3, 2, "Dylan reports arrival shortly before 8:15 PM and departure before 9:00 PM.", b""),
-                (4, 2, "Access events and witness notes place Dylan near key office zones.", b""),
-                (5, 3, "Payroll discrepancy surfaced one week before the homicide.", b""),
-                (6, 3, "Unsent email draft suggests Elsa planned to escalate an internal complaint.", b""),
+                (1, 1, "case_briefing_001", 1, True, ts, "Elsa was found after a narrow overnight window with limited building access.", b""),
+                (2, 1, "case_briefing_002", 2, True, ts, "Investigators recovered indicators of attempted scene cleanup.", b""),
+                (3, 2, "dylan_timeline_001", 1, True, ts, "Dylan reports arrival shortly before 8:15 PM and departure before 9:00 PM.", b""),
+                (4, 2, "dylan_timeline_002", 2, True, ts, "Access events and witness notes place Dylan near key office zones.", b""),
+                (5, 3, "dylan_motive_001", 1, True, ts, "Payroll discrepancy surfaced one week before the homicide.", b""),
+                (6, 3, "dylan_motive_002", 2, True, ts, "Unsent email draft suggests Elsa planned to escalate an internal complaint.", b""),
             ],
         ),
         SeedTable(
@@ -403,15 +489,16 @@ def build_seed_tables() -> list[SeedTable]:
             name="ProgressionSessions",
             insert_sql="""
                 INSERT INTO "ProgressionSessions"
-                ("SessionId", "CaseId", "NpcId", "State", "TurnCount", "TrustScore", "ShutdownScore",
+                ("SessionId", "PlayerId", "CaseId", "NpcId", "State", "TurnCount", "TrustScore", "ShutdownScore",
                  "IsTerminal", "Ending", "PresentedEvidenceJson", "DiscoveredClueIdsJson",
                  "DiscussedClueIdsJson", "ClueClickHistoryJson", "ComposureState", "ProofTier",
                  "CanConfess", "HistoryJson", "LastTransitionReason", "CreatedAtUtc", "UpdatedAtUtc", "ExpiresAtUtc")
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
             """.strip(),
             rows=[
                 (
                     session_id,
+                    1,
                     "capstone_case_alpha",
                     "dylan",
                     "BuildingCase",

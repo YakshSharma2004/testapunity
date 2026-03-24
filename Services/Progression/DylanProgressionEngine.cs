@@ -78,10 +78,11 @@ namespace testapi1.Services.Progression
                 Guard: static (state, _) => state.CanConfess)
         };
 
-        public ProgressionSessionState CreateInitialState(string sessionId, string caseId, string npcId, DateTimeOffset nowUtc)
+        public ProgressionSessionState CreateInitialState(string sessionId, int playerId, string caseId, string npcId, DateTimeOffset nowUtc)
         {
             return new ProgressionSessionState(
                 SessionId: sessionId,
+                PlayerId: playerId,
                 CaseId: string.IsNullOrWhiteSpace(caseId) ? "dylan-interrogation" : caseId,
                 NpcId: string.IsNullOrWhiteSpace(npcId) ? "dylan" : npcId,
                 State: ProgressionStateId.Intro,
@@ -161,56 +162,6 @@ namespace testapi1.Services.Progression
             };
 
             return new ProgressionTransitionResult(nextState, transitioned, reason);
-        }
-
-        public IReadOnlyList<string> GetAllowedIntents(ProgressionSessionState state)
-        {
-            if (state.IsTerminal || TerminalStates.Contains(state.State))
-            {
-                return Array.Empty<string>();
-            }
-
-            return state.State switch
-            {
-                ProgressionStateId.Intro => new[]
-                {
-                    "ASK_OPEN_QUESTION",
-                    "ASK_TIMELINE",
-                    "EMPATHY",
-                    "PRESENT_EVIDENCE",
-                    "CONTRADICTION",
-                    "INTIMIDATE",
-                    "SILENCE"
-                },
-                ProgressionStateId.InformationGathering => new[]
-                {
-                    "ASK_OPEN_QUESTION",
-                    "ASK_TIMELINE",
-                    "EMPATHY",
-                    "PRESENT_EVIDENCE",
-                    "SILENCE"
-                },
-                ProgressionStateId.BuildingCase => new[]
-                {
-                    "ASK_OPEN_QUESTION",
-                    "ASK_TIMELINE",
-                    "PRESENT_EVIDENCE",
-                    "CONTRADICTION",
-                    "EMPATHY",
-                    "SILENCE",
-                    "INTIMIDATE",
-                    "CLOSE_INTERROGATION"
-                },
-                ProgressionStateId.ConfessionWindow => new[]
-                {
-                    "ASK_OPEN_QUESTION",
-                    "EMPATHY",
-                    "SILENCE",
-                    "CONTRADICTION",
-                    "CLOSE_INTERROGATION"
-                },
-                _ => Array.Empty<string>()
-            };
         }
 
         private static ProgressionSessionState ApplyEventEffects(ProgressionSessionState state, ProgressionEvent progressionEvent)

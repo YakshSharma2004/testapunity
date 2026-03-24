@@ -62,7 +62,19 @@ namespace testapi1.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("IsEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("ProgressionEventType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("ActionId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
 
                     b.ToTable("ActionCatalog");
                 });
@@ -96,7 +108,8 @@ namespace testapi1.Migrations
 
                     b.HasIndex("ActionId");
 
-                    b.HasIndex("NpcId");
+                    b.HasIndex("NpcId", "ActionId", "ToneTag")
+                        .IsUnique();
 
                     b.ToTable("DialogueTemplates");
                 });
@@ -191,6 +204,13 @@ namespace testapi1.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ChunkId"));
 
+                    b.Property<string>("ChunkKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("ChunkOrder")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ChunkText")
                         .IsRequired()
                         .HasColumnType("text");
@@ -202,9 +222,22 @@ namespace testapi1.Migrations
                         .IsRequired()
                         .HasColumnType("bytea");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.HasKey("ChunkId");
 
-                    b.HasIndex("DocId");
+                    b.HasIndex("ChunkKey")
+                        .IsUnique();
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("DocId", "ChunkOrder");
 
                     b.ToTable("LoreChunks");
                 });
@@ -221,6 +254,15 @@ namespace testapi1.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("DocKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<int?>("NpcId")
                         .HasColumnType("integer");
 
@@ -231,7 +273,17 @@ namespace testapi1.Migrations
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
+
                     b.HasKey("DocId");
+
+                    b.HasIndex("DocKey")
+                        .IsUnique();
+
+                    b.HasIndex("IsActive");
 
                     b.HasIndex("NpcId");
 
@@ -277,7 +329,14 @@ namespace testapi1.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("NpcCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("NpcId");
+
+                    b.HasIndex("NpcCode")
+                        .IsUnique();
 
                     b.ToTable("Npcs");
                 });
@@ -318,6 +377,22 @@ namespace testapi1.Migrations
                     b.HasIndex("NpcId");
 
                     b.ToTable("PlayerNpcStates");
+                });
+
+            modelBuilder.Entity("testapi1.Domain.ProgressionStateAllowedAction", b =>
+                {
+                    b.Property<string>("State")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("ActionId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("State", "ActionId");
+
+                    b.HasIndex("ActionId");
+
+                    b.ToTable("ProgressionStateAllowedActions");
                 });
 
             modelBuilder.Entity("testapi1.Infrastructure.Persistence.ProgressionSessionEntity", b =>
@@ -376,6 +451,9 @@ namespace testapi1.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("PlayerId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("PresentedEvidenceJson")
                         .IsRequired()
                         .HasColumnType("text");
@@ -405,6 +483,8 @@ namespace testapi1.Migrations
                     b.HasKey("SessionId");
 
                     b.HasIndex("ExpiresAtUtc");
+
+                    b.HasIndex("PlayerId", "UpdatedAtUtc");
 
                     b.ToTable("ProgressionSessions");
                 });
@@ -492,6 +572,26 @@ namespace testapi1.Migrations
                     b.Navigation("Player");
                 });
 
+            modelBuilder.Entity("testapi1.Domain.ProgressionStateAllowedAction", b =>
+                {
+                    b.HasOne("testapi1.Domain.ActionCatalog", "Action")
+                        .WithMany("AllowedInStates")
+                        .HasForeignKey("ActionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Action");
+                });
+
+            modelBuilder.Entity("testapi1.Infrastructure.Persistence.ProgressionSessionEntity", b =>
+                {
+                    b.HasOne("Player", null)
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Player", b =>
                 {
                     b.Navigation("Interactions");
@@ -501,6 +601,8 @@ namespace testapi1.Migrations
 
             modelBuilder.Entity("testapi1.Domain.ActionCatalog", b =>
                 {
+                    b.Navigation("AllowedInStates");
+
                     b.Navigation("DialogueTemplates");
 
                     b.Navigation("Interactions");

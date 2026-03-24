@@ -22,13 +22,25 @@ namespace testapi1.Controllers
             CancellationToken cancellationToken)
         {
             var payload = request ?? new StartProgressionRequest();
+            if (payload.playerId.HasValue && payload.playerId.Value <= 0)
+            {
+                return BadRequest("playerId must be a positive integer.");
+            }
+
             if (!string.IsNullOrWhiteSpace(payload.sessionId) && !ProgressionSessionId.IsValid(payload.sessionId))
             {
                 return BadRequest("sessionId must match format ps_<32 lowercase hex characters>.");
             }
 
-            var response = await _progressionService.StartSessionAsync(payload, cancellationToken);
-            return Ok(response);
+            try
+            {
+                var response = await _progressionService.StartSessionAsync(payload, cancellationToken);
+                return Ok(response);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPost("turn")]
@@ -56,7 +68,16 @@ namespace testapi1.Controllers
                 return BadRequest($"Unknown discussedClueIds: {string.Join(", ", invalidDiscussed)}.");
             }
 
-            var response = await _progressionService.ApplyTurnAsync(request, cancellationToken);
+            ProgressionTurnResponse? response;
+            try
+            {
+                response = await _progressionService.ApplyTurnAsync(request, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+
             if (response is null)
             {
                 return NotFound($"Session '{request.sessionId}' was not found or has expired.");
@@ -109,7 +130,16 @@ namespace testapi1.Controllers
                 return BadRequest($"Unknown clueId '{request.clueId}'.");
             }
 
-            var response = await _progressionService.ApplyClueClickAsync(request, cancellationToken);
+            ProgressionClueClickResponse? response;
+            try
+            {
+                response = await _progressionService.ApplyClueClickAsync(request, cancellationToken);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+
             if (response is null)
             {
                 return NotFound($"Session '{request.sessionId}' was not found or has expired.");

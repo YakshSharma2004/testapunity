@@ -18,6 +18,7 @@ namespace testapi1.Infrastructure.Persistence
         public DbSet<DialogueTemplate> DialogueTemplates { get; set; }
         public DbSet<LoreDoc> LoreDocs { get; set; }
         public DbSet<LoreChunk> LoreChunks { get; set; }
+        public DbSet<ProgressionStateAllowedAction> ProgressionStateAllowedActions { get; set; }
 
         // Progression Session Store
         public DbSet<ProgressionSessionEntity> ProgressionSessions { get; set; }
@@ -27,15 +28,55 @@ namespace testapi1.Infrastructure.Persistence
             // ── Explicit PKs for entities that don't use EF's default naming convention ──
             modelBuilder.Entity<ActionCatalog>()
                 .HasKey(a => a.ActionId);
+            modelBuilder.Entity<ActionCatalog>()
+                .HasIndex(a => a.Code)
+                .IsUnique();
+            modelBuilder.Entity<ActionCatalog>()
+                .Property(a => a.IsEnabled)
+                .HasDefaultValue(true);
 
             modelBuilder.Entity<DialogueTemplate>()
                 .HasKey(d => d.TemplateId);
+            modelBuilder.Entity<DialogueTemplate>()
+                .HasIndex(d => new { d.NpcId, d.ActionId, d.ToneTag })
+                .IsUnique();
 
             modelBuilder.Entity<LoreDoc>()
                 .HasKey(l => l.DocId);
+            modelBuilder.Entity<LoreDoc>()
+                .HasIndex(l => l.DocKey)
+                .IsUnique();
+            modelBuilder.Entity<LoreDoc>()
+                .HasIndex(l => l.IsActive);
+            modelBuilder.Entity<LoreDoc>()
+                .Property(l => l.Version)
+                .HasDefaultValue(1);
+            modelBuilder.Entity<LoreDoc>()
+                .Property(l => l.IsActive)
+                .HasDefaultValue(true);
 
             modelBuilder.Entity<LoreChunk>()
                 .HasKey(c => c.ChunkId);
+            modelBuilder.Entity<LoreChunk>()
+                .HasIndex(c => c.ChunkKey)
+                .IsUnique();
+            modelBuilder.Entity<LoreChunk>()
+                .HasIndex(c => new { c.DocId, c.ChunkOrder });
+            modelBuilder.Entity<LoreChunk>()
+                .HasIndex(c => c.IsActive);
+            modelBuilder.Entity<LoreChunk>()
+                .Property(c => c.IsActive)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<ProgressionStateAllowedAction>()
+                .HasKey(item => new { item.State, item.ActionId });
+            modelBuilder.Entity<ProgressionStateAllowedAction>()
+                .Property(item => item.State)
+                .HasMaxLength(50);
+            modelBuilder.Entity<ProgressionStateAllowedAction>()
+                .HasOne(item => item.Action)
+                .WithMany(action => action.AllowedInStates)
+                .HasForeignKey(item => item.ActionId);
 
             // ── PLAYER_NPC_STATE — composite PK ──
             modelBuilder.Entity<PlayerNpcState>()
@@ -72,6 +113,9 @@ namespace testapi1.Infrastructure.Persistence
                 .Property(n => n.BaseOpenness).HasPrecision(4, 2);
             modelBuilder.Entity<Npc>()
                 .Property(n => n.BaseConfidence).HasPrecision(4, 2);
+            modelBuilder.Entity<Npc>()
+                .HasIndex(n => n.NpcCode)
+                .IsUnique();
 
             // ── INTERACTION — relationships ──
             modelBuilder.Entity<Interaction>()
@@ -132,6 +176,10 @@ namespace testapi1.Infrastructure.Persistence
                 entity.Property(e => e.ComposureState).HasMaxLength(50);
                 entity.Property(e => e.ProofTier).HasMaxLength(50);
                 entity.HasIndex(e => e.ExpiresAtUtc);
+                entity.HasIndex(e => new { e.PlayerId, e.UpdatedAtUtc });
+                entity.HasOne<Player>()
+                    .WithMany()
+                    .HasForeignKey(e => e.PlayerId);
             });
         }
     }

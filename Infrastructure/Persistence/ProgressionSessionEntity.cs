@@ -4,6 +4,7 @@ namespace testapi1.Infrastructure.Persistence
     public class ProgressionSessionEntity
     {
         public string SessionId { get; set; } = default!;       // PK
+        public int PlayerId { get; set; }
         public string CaseId { get; set; } = default!;
         public string NpcId { get; set; } = default!;
         public string State { get; set; } = default!;           

@@ -114,7 +114,9 @@ builder.Services.AddSingleton<LlmService>();
 builder.Services.AddSingleton<ILLMService>(sp => sp.GetRequiredService<LlmService>());
 builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
 builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
-builder.Services.AddSingleton<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
+builder.Services.AddScoped<IProgressionCatalogRepository, PostgresProgressionCatalogRepository>();
+builder.Services.AddScoped<IProgressionRuntimeRepository, PostgresProgressionRuntimeRepository>();
+builder.Services.AddScoped<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
 builder.Services.AddScoped<IGameProgressionService, GameProgressionService>();
 // ---------- BUILD APP ----------
 

@@ -8,10 +8,54 @@ namespace testapi1.Tests
     public sealed class GameProgressionServiceTests
     {
         [Fact]
+        public async Task StartSession_Defaults_PlayerId_To_Seeded_Player_One()
+        {
+            var runtime = new InMemoryRuntimeRepository();
+            var service = CreateService(new InMemorySessionStore(), runtime);
+
+            var start = await service.StartSessionAsync(new StartProgressionRequest());
+
+            Assert.Equal(1, start.snapshot.playerId);
+            Assert.Contains(runtime.EnsureCalls, call => call.PlayerId == 1 && call.NpcId == 1);
+        }
+
+        [Fact]
+        public async Task StartSession_Throws_When_Player_Is_Missing()
+        {
+            var runtime = new InMemoryRuntimeRepository();
+            runtime.RemovePlayer(1);
+            var service = CreateService(new InMemorySessionStore(), runtime);
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.StartSessionAsync(new StartProgressionRequest()));
+        }
+
+        [Fact]
+        public async Task Turn_Persists_Runtime_Record()
+        {
+            var runtime = new InMemoryRuntimeRepository();
+            var service = CreateService(new InMemorySessionStore(), runtime);
+            var start = await service.StartSessionAsync(new StartProgressionRequest());
+
+            var response = await service.ApplyTurnAsync(new ProgressionTurnRequest
+            {
+                sessionId = start.sessionId,
+                text = "Walk me through your timeline."
+            });
+
+            Assert.NotNull(response);
+            var record = Assert.Single(runtime.TurnRecords);
+            Assert.Equal(1, record.PlayerId);
+            Assert.Equal(1, record.NpcId);
+            Assert.Equal("ASK_OPEN_QUESTION", record.IntentCode);
+        }
+
+        [Fact]
         public async Task ClueClick_FirstClick_Applies_Repeat_Is_NoOp_But_Logged()
         {
             var store = new InMemorySessionStore();
-            var service = CreateService(store);
+            var runtime = new InMemoryRuntimeRepository();
+            var service = CreateService(store, runtime);
             var start = await service.StartSessionAsync(new StartProgressionRequest());
 
             var first = await service.ApplyClueClickAsync(new ProgressionClueClickRequest
@@ -39,12 +83,13 @@ namespace testapi1.Tests
             Assert.NotNull(state);
             Assert.Single(state!.DiscoveredClues);
             Assert.Equal(2, state.ClueClickHistory.Count);
+            Assert.Equal(2, runtime.TouchCalls.Count);
         }
 
         [Fact]
         public async Task ClueClick_Allows_Any_Order()
         {
-            var service = CreateService(new InMemorySessionStore());
+            var service = CreateService(new InMemorySessionStore(), new InMemoryRuntimeRepository());
             var start = await service.StartSessionAsync(new StartProgressionRequest());
 
             var response = await service.ApplyClueClickAsync(new ProgressionClueClickRequest
@@ -76,6 +121,7 @@ namespace testapi1.Tests
 
             var service = CreateService(
                 new InMemorySessionStore(),
+                new InMemoryRuntimeRepository(),
                 new ProgressionOptions { ConfessionRequiredClues = required.ToList() });
 
             var start = await service.StartSessionAsync(new StartProgressionRequest());
@@ -108,7 +154,7 @@ namespace testapi1.Tests
         [Fact]
         public async Task ClueClick_Returns_Null_When_Session_Does_Not_Exist()
         {
-            var service = CreateService(new InMemorySessionStore());
+            var service = CreateService(new InMemorySessionStore(), new InMemoryRuntimeRepository());
 
             var response = await service.ApplyClueClickAsync(new ProgressionClueClickRequest
             {
@@ -121,15 +167,17 @@ namespace testapi1.Tests
 
         private static GameProgressionService CreateService(
             InMemorySessionStore store,
+            InMemoryRuntimeRepository runtimeRepository,
             ProgressionOptions? options = null)
         {
             return new GameProgressionService(
                 engine: new DylanProgressionEngine(),
                 sessionStore: store,
                 intentClassifier: new FixedIntentClassifier(),
-                eventMapper: new IntentToProgressionEventMapper(),
+                eventMapper: new FixedProgressionEventMapper(),
                 normalizer: new PassThroughNormalizer(),
-                progressionOptions: new StaticOptionsMonitor<ProgressionOptions>(options ?? new ProgressionOptions()));
+                progressionOptions: new StaticOptionsMonitor<ProgressionOptions>(options ?? new ProgressionOptions()),
+                runtimeRepository: runtimeRepository);
         }
     }
 }

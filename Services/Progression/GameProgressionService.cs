@@ -1,7 +1,7 @@
-using testapi1.Application;
-using testapi1.ApiContracts;
-using testapi1.Domain.Progression;
 using Microsoft.Extensions.Options;
+using testapi1.ApiContracts;
+using testapi1.Application;
+using testapi1.Domain.Progression;
 
 namespace testapi1.Services.Progression
 {
@@ -13,6 +13,7 @@ namespace testapi1.Services.Progression
         private readonly IIntentToProgressionEventMapper _eventMapper;
         private readonly ITextNormalizer _normalizer;
         private readonly IOptionsMonitor<ProgressionOptions> _progressionOptions;
+        private readonly IProgressionRuntimeRepository _runtimeRepository;
 
         public GameProgressionService(
             IGameProgressionEngine engine,
@@ -20,7 +21,8 @@ namespace testapi1.Services.Progression
             IIntentClassifier intentClassifier,
             IIntentToProgressionEventMapper eventMapper,
             ITextNormalizer normalizer,
-            IOptionsMonitor<ProgressionOptions> progressionOptions)
+            IOptionsMonitor<ProgressionOptions> progressionOptions,
+            IProgressionRuntimeRepository runtimeRepository)
         {
             _engine = engine;
             _sessionStore = sessionStore;
@@ -28,6 +30,7 @@ namespace testapi1.Services.Progression
             _eventMapper = eventMapper;
             _normalizer = normalizer;
             _progressionOptions = progressionOptions;
+            _runtimeRepository = runtimeRepository;
         }
 
         public async Task<StartProgressionResponse> StartSessionAsync(
@@ -39,21 +42,47 @@ namespace testapi1.Services.Progression
                 ? ProgressionSessionId.NewId()
                 : request.sessionId.Trim().ToLowerInvariant();
 
+            var playerId = request.playerId.GetValueOrDefault(1);
+            if (playerId <= 0)
+            {
+                throw new InvalidOperationException("playerId must be a positive integer.");
+            }
+
+            var playerExists = await _runtimeRepository.PlayerExistsAsync(playerId, cancellationToken);
+            if (!playerExists)
+            {
+                throw new InvalidOperationException($"Player '{playerId}' was not found.");
+            }
+
             var caseId = string.IsNullOrWhiteSpace(request.caseId)
                 ? "dylan-interrogation"
                 : request.caseId.Trim();
-            var npcId = string.IsNullOrWhiteSpace(request.npcId)
+            var npcCode = string.IsNullOrWhiteSpace(request.npcId)
                 ? "dylan"
-                : request.npcId.Trim();
+                : request.npcId.Trim().ToLowerInvariant();
 
-            var initialState = _engine.CreateInitialState(sessionId, caseId, npcId, nowUtc);
+            var npc = await _runtimeRepository.GetNpcByCodeAsync(npcCode, cancellationToken);
+            if (npc is null)
+            {
+                throw new InvalidOperationException($"NPC '{npcCode}' was not found.");
+            }
+
+            await _runtimeRepository.EnsurePlayerNpcStateAsync(playerId, npc.NpcId, nowUtc, cancellationToken);
+
+            var initialState = _engine.CreateInitialState(
+                sessionId: sessionId,
+                playerId: playerId,
+                caseId: caseId,
+                npcId: npc.NpcCode,
+                nowUtc: nowUtc);
+
             initialState = CaseProgressionEvaluator.Recalculate(initialState, GetConfessionRequiredClues());
             await _sessionStore.SetAsync(initialState, cancellationToken);
 
             return new StartProgressionResponse
             {
                 sessionId = sessionId,
-                snapshot = ToSnapshot(initialState)
+                snapshot = await ToSnapshotAsync(initialState, cancellationToken)
             };
         }
 
@@ -67,6 +96,12 @@ namespace testapi1.Services.Progression
                 return null;
             }
 
+            var npc = await _runtimeRepository.GetNpcByCodeAsync(session.NpcId, cancellationToken);
+            if (npc is null)
+            {
+                throw new InvalidOperationException($"NPC '{session.NpcId}' was not found.");
+            }
+
             var intentRequest = new IntentRequest
             {
                 Text = request.text ?? string.Empty,
@@ -76,24 +111,54 @@ namespace testapi1.Services.Progression
 
             var intent = await _intentClassifier.ClassifyAsync(intentRequest, cancellationToken);
             var normalizedText = _normalizer.NormalizeForMatch(intentRequest.Text);
-            var progressionEvent = _eventMapper.Map(intentRequest, intent, normalizedText, DateTimeOffset.UtcNow);
-            var sessionWithDiscussion = ApplyDiscussedClues(session, request.discussedClueIds, progressionEvent.OccurredAtUtc);
-            var sessionWithGateUpdates = CaseProgressionEvaluator.Recalculate(sessionWithDiscussion, GetConfessionRequiredClues());
-            var transition = _engine.Apply(sessionWithGateUpdates, progressionEvent);
+            var mapped = await _eventMapper.MapAsync(
+                intentRequest,
+                intent,
+                normalizedText,
+                DateTimeOffset.UtcNow,
+                cancellationToken);
+
+            var sessionWithDiscussion = ApplyDiscussedClues(
+                session,
+                request.discussedClueIds,
+                mapped.Event.OccurredAtUtc);
+
+            var sessionWithGateUpdates = CaseProgressionEvaluator.Recalculate(
+                sessionWithDiscussion,
+                GetConfessionRequiredClues());
+
+            var transition = _engine.Apply(sessionWithGateUpdates, mapped.Event);
             var finalState = CaseProgressionEvaluator.Recalculate(transition.State, GetConfessionRequiredClues());
 
             await _sessionStore.SetAsync(finalState, cancellationToken);
 
+            await _runtimeRepository.PersistTurnAsync(
+                new TurnPersistenceRecord(
+                    PlayerId: finalState.PlayerId,
+                    NpcId: npc.NpcId,
+                    ActionId: mapped.ActionId,
+                    OccurredAtUtc: mapped.Event.OccurredAtUtc,
+                    IntentCode: intent.intent ?? "unknown",
+                    EventType: mapped.Event.EventType.ToString(),
+                    PlayerText: request.text ?? string.Empty,
+                    TransitionReason: transition.Reason,
+                    ComposureState: finalState.ComposureState.ToString(),
+                    ModelVersion: intent.modelVersion ?? "unknown",
+                    TrustScore: finalState.TrustScore,
+                    ShutdownScore: finalState.ShutdownScore,
+                    TurnCount: finalState.TurnCount),
+                cancellationToken);
+
             return new ProgressionTurnResponse
             {
                 sessionId = finalState.SessionId,
-                intent = intent.intent,
+                intent = intent.intent ?? "unknown",
                 confidence = intent.confidence,
-                eventType = progressionEvent.EventType.ToString(),
-                evidenceId = progressionEvent.EvidenceId?.ToString() ?? string.Empty,
+                eventType = mapped.Event.EventType.ToString(),
+                evidenceId = mapped.Event.EvidenceId?.ToString() ?? string.Empty,
                 transitioned = transition.Transitioned,
                 transitionReason = transition.Reason,
-                snapshot = ToSnapshot(finalState)
+                snapshot = await ToSnapshotAsync(finalState, cancellationToken)
             };
         }
 
@@ -137,6 +202,18 @@ namespace testapi1.Services.Progression
             updatedState = CaseProgressionEvaluator.Recalculate(updatedState, GetConfessionRequiredClues());
             await _sessionStore.SetAsync(updatedState, cancellationToken);
 
+            var npc = await _runtimeRepository.GetNpcByCodeAsync(updatedState.NpcId, cancellationToken);
+            if (npc is null)
+            {
+                throw new InvalidOperationException($"NPC '{updatedState.NpcId}' was not found.");
+            }
+
+            await _runtimeRepository.TouchPlayerNpcStateAsync(
+                updatedState.PlayerId,
+                npc.NpcId,
+                nowUtc,
+                cancellationToken);
+
             return new ProgressionClueClickResponse
             {
                 sessionId = updatedState.SessionId,
@@ -145,7 +222,7 @@ namespace testapi1.Services.Progression
                 isFirstDiscovery = isFirstDiscovery,
                 applied = isFirstDiscovery,
                 reason = isFirstDiscovery ? "clue-discovered" : "duplicate-click",
-                snapshot = ToSnapshot(updatedState)
+                snapshot = await ToSnapshotAsync(updatedState, cancellationToken)
             };
         }
 
@@ -154,14 +231,19 @@ namespace testapi1.Services.Progression
             CancellationToken cancellationToken = default)
         {
             var state = await _sessionStore.GetAsync(sessionId, cancellationToken);
-            return state is null ? null : ToSnapshot(state);
+            return state is null ? null : await ToSnapshotAsync(state, cancellationToken);
         }
 
-        private ProgressionSnapshotResponse ToSnapshot(ProgressionSessionState state)
+        private async Task<ProgressionSnapshotResponse> ToSnapshotAsync(
+            ProgressionSessionState state,
+            CancellationToken cancellationToken)
         {
+            var allowedIntents = await _eventMapper.GetAllowedIntentsAsync(state.State, cancellationToken);
+
             return new ProgressionSnapshotResponse
             {
                 sessionId = state.SessionId,
+                playerId = state.PlayerId,
                 caseId = state.CaseId,
                 npcId = state.NpcId,
                 state = state.State.ToString(),
@@ -170,7 +252,7 @@ namespace testapi1.Services.Progression
                 shutdownScore = state.ShutdownScore,
                 isTerminal = state.IsTerminal,
                 ending = state.Ending.ToString(),
-                allowedIntents = _engine.GetAllowedIntents(state).ToList(),
+                allowedIntents = allowedIntents.ToList(),
                 evidencePresented = state.PresentedEvidence.Select(item => item.ToString()).OrderBy(value => value).ToList(),
                 discoveredClueIds = state.DiscoveredClues.Select(ClueCatalog.ToKey).OrderBy(value => value).ToList(),
                 discussedClueIds = state.DiscussedClues.Select(ClueCatalog.ToKey).OrderBy(value => value).ToList(),

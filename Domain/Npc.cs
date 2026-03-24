@@ -3,6 +3,7 @@
     public class Npc
     {
         public int NpcId { get; set; }
+        public string NpcCode { get; set; }
         public string Name { get; set; }
         public string Archetype { get; set; }
         public decimal BaseFriendliness { get; set; }

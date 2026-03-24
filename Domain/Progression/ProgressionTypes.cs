@@ -98,6 +98,7 @@ namespace testapi1.Domain.Progression
 
     public sealed record ProgressionSessionState(
         string SessionId,
+        int PlayerId,
         string CaseId,
         string NpcId,
         ProgressionStateId State,

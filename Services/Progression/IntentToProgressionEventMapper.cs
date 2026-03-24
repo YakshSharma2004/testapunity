@@ -6,14 +6,27 @@ namespace testapi1.Services.Progression
 {
     public sealed class IntentToProgressionEventMapper : IIntentToProgressionEventMapper
     {
-        public ProgressionEvent Map(IntentRequest request, IntentResponse response, string normalizedText, DateTimeOffset nowUtc)
+        private readonly IProgressionCatalogRepository _catalogRepository;
+
+        public IntentToProgressionEventMapper(IProgressionCatalogRepository catalogRepository)
         {
-            var eventType = MapIntentToEventType(response.intent);
+            _catalogRepository = catalogRepository;
+        }
+
+        public async Task<ProgressionMappedEvent> MapAsync(
+            IntentRequest request,
+            IntentResponse response,
+            string normalizedText,
+            DateTimeOffset nowUtc,
+            CancellationToken cancellationToken = default)
+        {
+            var action = await _catalogRepository.FindActionByIntentAsync(response.intent ?? string.Empty, cancellationToken);
+            var eventType = action?.ProgressionEventType ?? ProgressionEventType.Unknown;
             var evidenceId = eventType == ProgressionEventType.PresentEvidence
                 ? DetectEvidence(normalizedText)
                 : null;
 
-            return new ProgressionEvent(
+            var progressionEvent = new ProgressionEvent(
                 EventType: eventType,
                 Intent: response.intent ?? "unknown",
                 Confidence: response.confidence,
@@ -21,22 +34,17 @@ namespace testapi1.Services.Progression
                 NormalizedText: normalizedText ?? string.Empty,
                 EvidenceId: evidenceId,
                 OccurredAtUtc: nowUtc);
+
+            return new ProgressionMappedEvent(
+                Event: progressionEvent,
+                ActionId: action?.ActionId);
         }
 
-        private static ProgressionEventType MapIntentToEventType(string? intent)
+        public Task<IReadOnlyList<string>> GetAllowedIntentsAsync(
+            ProgressionStateId state,
+            CancellationToken cancellationToken = default)
         {
-            return (intent ?? string.Empty).Trim().ToUpperInvariant() switch
-            {
-                "ASK_OPEN_QUESTION" => ProgressionEventType.AskOpenQuestion,
-                "ASK_TIMELINE" => ProgressionEventType.AskTimeline,
-                "EMPATHY" => ProgressionEventType.Empathy,
-                "PRESENT_EVIDENCE" => ProgressionEventType.PresentEvidence,
-                "CONTRADICTION" => ProgressionEventType.Contradiction,
-                "SILENCE" => ProgressionEventType.Silence,
-                "INTIMIDATE" => ProgressionEventType.Intimidate,
-                "CLOSE_INTERROGATION" => ProgressionEventType.CloseInterrogation,
-                _ => ProgressionEventType.Unknown
-            };
+            return _catalogRepository.GetAllowedIntentCodesAsync(state, cancellationToken);
         }
 
         private static EvidenceId? DetectEvidence(string normalizedText)

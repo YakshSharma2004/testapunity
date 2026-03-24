@@ -3,6 +3,7 @@ namespace testapi1.ApiContracts
     public sealed class ProgressionSnapshotResponse
     {
         public string sessionId { get; set; } = "";
+        public int playerId { get; set; }
         public string caseId { get; set; } = "";
         public string npcId { get; set; } = "";
         public string state { get; set; } = "";

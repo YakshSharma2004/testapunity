@@ -60,6 +60,7 @@ namespace testapi1.Infrastructure.Persistence
             }
             else
             {
+                existing.PlayerId = state.PlayerId;
                 existing.State = state.State.ToString();
                 existing.TurnCount = state.TurnCount;
                 existing.TrustScore = state.TrustScore;
@@ -139,6 +140,7 @@ namespace testapi1.Infrastructure.Persistence
 
             return new ProgressionSessionState(
                 SessionId: e.SessionId,
+                PlayerId: e.PlayerId,
                 CaseId: e.CaseId,
                 NpcId: e.NpcId,
                 State: Enum.Parse<ProgressionStateId>(e.State),
@@ -165,6 +167,7 @@ namespace testapi1.Infrastructure.Persistence
             ProgressionSessionState s, DateTimeOffset expiresAt) => new()
             {
                 SessionId = s.SessionId,
+                PlayerId = s.PlayerId,
                 CaseId = s.CaseId,
                 NpcId = s.NpcId,
                 State = s.State.ToString(),
