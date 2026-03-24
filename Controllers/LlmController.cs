@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using testapi1.Application;
 using testapi1.ApiContracts;
+using testapi1.Domain.Progression;
 
 namespace testapi1.Controllers
 {
@@ -8,22 +9,34 @@ namespace testapi1.Controllers
     [Route("api/v1/[controller]")]
     public class LlmController : ControllerBase
     {
-        private readonly ILLMService _llmService;
+        private readonly INpcDialogueService _npcDialogueService;
 
-        public LlmController(ILLMService llmService)
+        public LlmController(INpcDialogueService npcDialogueService)
         {
-            _llmService = llmService;
+            _npcDialogueService = npcDialogueService;
         }
 
         [HttpPost("generate")]
-        public async Task<ActionResult<LlmRawResponse>> Generate([FromBody] LlmPromptPayload payload, CancellationToken cancellationToken)
+        public async Task<ActionResult<NpcDialogueResponse>> Generate(
+            [FromBody] NpcDialogueRequest payload,
+            CancellationToken cancellationToken)
         {
-            if (payload == null || string.IsNullOrWhiteSpace(payload.promptText))
+            if (payload is null || string.IsNullOrWhiteSpace(payload.sessionId) || string.IsNullOrWhiteSpace(payload.text))
             {
-                return BadRequest("promptText is required.");
+                return BadRequest("sessionId and text are required.");
             }
 
-            var response = await _llmService.GenerateResponseAsync(payload, cancellationToken);
+            if (!ProgressionSessionId.IsValid(payload.sessionId))
+            {
+                return BadRequest("sessionId must match format ps_<32 lowercase hex characters>.");
+            }
+
+            var response = await _npcDialogueService.GenerateAsync(payload, cancellationToken);
+            if (response is null)
+            {
+                return NotFound($"Session '{payload.sessionId}' was not found or has expired.");
+            }
+
             return Ok(response);
         }
     }

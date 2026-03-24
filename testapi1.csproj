@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Platforms>AnyCPU;x86</Platforms>
+    <DefaultItemExcludes>$(DefaultItemExcludes);testapi1.Tests\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -29,11 +30,6 @@
 
   <ItemGroup>
     <Folder Include="Application\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="testapi1.Tests\**\*.cs" />
-    <None Include="testapi1.Tests\**\*" Exclude="testapi1.Tests\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

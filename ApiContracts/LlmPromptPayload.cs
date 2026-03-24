@@ -8,5 +8,7 @@ namespace testapi1.ApiContracts
         public string npcId { get; set; } = "";
         public string contextKey { get; set; } = "";
         public int maxTokens { get; set; } = 256;
+        public bool requireJson { get; set; }
+        public double? temperature { get; set; }
     }
 }

@@ -9,8 +9,10 @@ using testapi1.Services;
 using testapi1.Services.Caching;
 using testapi1.Services.Configuration;
 using testapi1.Services.Connectivity;
+using testapi1.Services.Dialogue;
 using testapi1.Services.Embeddings;
 using testapi1.Services.Intent;
+using testapi1.Services.Llm;
 using testapi1.Services.Progression;
 using testapi1.Services.Redis;
 using Microsoft.EntityFrameworkCore;
@@ -54,9 +56,12 @@ builder.Services.Configure<EmbeddingsOptions>(builder.Configuration.GetSection("
 builder.Services.Configure<ProgressionOptions>(builder.Configuration.GetSection("Progression"));
 builder.Services.Configure<QdrantOptions>(builder.Configuration.GetSection("Qdrant"));
 builder.Services.Configure<RemoteConnectivityOptions>(builder.Configuration.GetSection("RemoteConnectivity"));
+builder.Services.Configure<LlmOptions>(builder.Configuration.GetSection("Llm"));
 
 builder.Services.Configure<OnnxModelOptions>(builder.Configuration.GetSection("Onnx"));
 builder.Services.AddHttpClient("remote-dependency-probe");
+builder.Services.AddHttpClient("llm-local");
+builder.Services.AddHttpClient("llm-remote");
 builder.Services.AddSingleton<IRedisCacheStore, DistributedCacheRedisStore>();
 builder.Services.AddSingleton<ITextNormalizer, TextNormalizationService>();
 builder.Services.AddSingleton<IOnnxModelRunner, OnnxModelRunner>();
@@ -109,15 +114,15 @@ builder.Services.AddSingleton<IIntentClassifier>(sp =>
         sp.GetRequiredService<IOptionsMonitor<EmbeddingsOptions>>(),
         sp.GetRequiredService<ILogger<CachedIntentClassifier>>()));
 
-builder.Services.AddSingleton<LlmService>();
-
-builder.Services.AddSingleton<ILLMService>(sp => sp.GetRequiredService<LlmService>());
+builder.Services.AddSingleton<ILLMService, LlmService>();
 builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
 builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
 builder.Services.AddScoped<IProgressionCatalogRepository, PostgresProgressionCatalogRepository>();
 builder.Services.AddScoped<IProgressionRuntimeRepository, PostgresProgressionRuntimeRepository>();
 builder.Services.AddScoped<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
 builder.Services.AddScoped<IGameProgressionService, GameProgressionService>();
+builder.Services.AddScoped<IRetrievalService, RetrievalService>();
+builder.Services.AddScoped<INpcDialogueService, NpcDialogueService>();
 // ---------- BUILD APP ----------
 
 var app = builder.Build();
