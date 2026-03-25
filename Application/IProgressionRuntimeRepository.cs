@@ -14,7 +14,7 @@ namespace testapi1.Application
             DateTimeOffset nowUtc,
             CancellationToken cancellationToken = default);
 
-        Task PersistTurnAsync(
+        Task<PersistedTurnRecord> PersistTurnAsync(
             TurnPersistenceRecord record,
             CancellationToken cancellationToken = default);
 
@@ -41,4 +41,10 @@ namespace testapi1.Application
         int TrustScore,
         int ShutdownScore,
         int TurnCount);
+
+    public sealed record PersistedTurnRecord(
+        long InteractionId,
+        int PlayerId,
+        int NpcId,
+        DateTimeOffset OccurredAtUtc);
 }

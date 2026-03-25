@@ -8,7 +8,7 @@ using testapi1.Services.Llm;
 
 namespace testapi1.Services.Dialogue
 {
-    public sealed class NpcDialogueService : INpcDialogueService
+    public sealed class NpcDialogueService : INpcDialogueService, IResolvedNpcDialogueService
     {
         private static readonly JsonSerializerOptions PromptJsonOptions = new(JsonSerializerDefaults.Web)
         {
@@ -17,23 +17,20 @@ namespace testapi1.Services.Dialogue
 
         private readonly IRetrievalService _retrievalService;
         private readonly ILLMService _llmService;
-        private readonly IIntentClassifier _intentClassifier;
-        private readonly ITextNormalizer _normalizer;
+        private readonly IPlayerTurnResolver _turnResolver;
         private readonly IOptionsMonitor<LlmOptions> _llmOptions;
         private readonly ILogger<NpcDialogueService> _logger;
 
         public NpcDialogueService(
             IRetrievalService retrievalService,
             ILLMService llmService,
-            IIntentClassifier intentClassifier,
-            ITextNormalizer normalizer,
+            IPlayerTurnResolver turnResolver,
             IOptionsMonitor<LlmOptions> llmOptions,
             ILogger<NpcDialogueService> logger)
         {
             _retrievalService = retrievalService;
             _llmService = llmService;
-            _intentClassifier = intentClassifier;
-            _normalizer = normalizer;
+            _turnResolver = turnResolver;
             _llmOptions = llmOptions;
             _logger = logger;
         }
@@ -48,26 +45,52 @@ namespace testapi1.Services.Dialogue
                 return null;
             }
 
-            var normalizedText = _normalizer.NormalizeForMatch(request.text);
-            var llmOptions = _llmOptions.CurrentValue;
-            var useCompactLocalPrompt = IsLocalConfigured(llmOptions.Local);
-            var intent = await _intentClassifier.ClassifyAsync(
-                new IntentRequest
+            var resolvedTurn = await _turnResolver.ResolveAsync(
+                new ProgressionTurnRequest
                 {
-                    Text = request.text,
-                    NpcId = world.NpcId,
-                    ContextKey = request.contextKey ?? string.Empty
+                    sessionId = request.sessionId,
+                    text = request.text,
+                    npcId = world.NpcId,
+                    contextKey = request.contextKey ?? string.Empty
                 },
+                world.NpcId,
                 cancellationToken);
 
-            var referencedTopics = ExtractReferencedTopics(normalizedText);
+            return await GenerateAsync(request, resolvedTurn, persistedTurn: null, cancellationToken);
+        }
+
+        public async Task<NpcDialogueResponse?> GenerateAsync(
+            NpcDialogueRequest request,
+            ResolvedPlayerTurn turn,
+            PersistedTurnRecord? persistedTurn,
+            CancellationToken cancellationToken = default)
+        {
+            var world = await _retrievalService.GetNpcDialogueContextAsync(request.sessionId, cancellationToken);
+            if (world is null)
+            {
+                return null;
+            }
+
+            return await GenerateWithWorldAsync(world, request, turn, persistedTurn, cancellationToken);
+        }
+
+        private async Task<NpcDialogueResponse> GenerateWithWorldAsync(
+            NpcDialogueWorldContext world,
+            NpcDialogueRequest request,
+            ResolvedPlayerTurn turn,
+            PersistedTurnRecord? persistedTurn,
+            CancellationToken cancellationToken)
+        {
+            var llmOptions = _llmOptions.CurrentValue;
+            var useCompactLocalPrompt = IsLocalConfigured(llmOptions.Local);
+            var referencedTopics = ExtractReferencedTopics(turn.NormalizedText);
             var promptPayload = new LlmPromptPayload
             {
                 conversationId = world.SessionId,
                 npcId = world.NpcId,
-                contextKey = request.contextKey ?? string.Empty,
+                contextKey = turn.ContextKey,
                 systemContext = BuildSystemPrompt(world),
-                promptText = BuildUserPrompt(world, request.text, normalizedText, intent, referencedTopics, llmOptions.Local, useCompactLocalPrompt),
+                promptText = BuildUserPrompt(world, request.text, turn.NormalizedText, turn.Intent, referencedTopics, llmOptions.Local, useCompactLocalPrompt),
                 maxTokens = request.maxTokens > 0 ? request.maxTokens : llmOptions.Generation.MaxTokens,
                 temperature = llmOptions.Generation.Temperature,
                 requireJson = true
@@ -106,9 +129,10 @@ namespace testapi1.Services.Dialogue
                     return await BuildAndPersistSafeFallbackAsync(
                         world,
                         request.text,
-                        intent.intent,
+                        turn.Intent.intent,
                         filteredTopics,
                         finishReason: "policy_fallback",
+                        persistedTurn,
                         cancellationToken);
                 }
 
@@ -130,11 +154,12 @@ namespace testapi1.Services.Dialogue
                         PlayerId: world.PlayerId,
                         NpcDbId: world.NpcDbId,
                         PlayerText: request.text,
-                        IntentCode: intent.intent ?? "unknown",
+                        IntentCode: turn.Intent.intent ?? "unknown",
                         ResponseText: response.replyText,
                         ResponseSource: MapResponseSource(response.provider),
                         ModelVersion: response.modelName,
-                        OccurredAtUtc: DateTimeOffset.UtcNow),
+                        OccurredAtUtc: DateTimeOffset.UtcNow,
+                        InteractionId: persistedTurn?.InteractionId),
                     cancellationToken);
 
                 return response;
@@ -149,9 +174,10 @@ namespace testapi1.Services.Dialogue
                 return await BuildAndPersistSafeFallbackAsync(
                     world,
                     request.text,
-                    intent.intent,
+                    turn.Intent.intent,
                     referencedTopics,
                     finishReason: "llm_unavailable",
+                    persistedTurn,
                     cancellationToken);
             }
         }
@@ -365,6 +391,7 @@ namespace testapi1.Services.Dialogue
             string? intentCode,
             IReadOnlyList<string> candidateTopics,
             string finishReason,
+            PersistedTurnRecord? persistedTurn,
             CancellationToken cancellationToken)
         {
             var fallbackTopics = candidateTopics
@@ -399,7 +426,8 @@ namespace testapi1.Services.Dialogue
                     ResponseText: response.replyText,
                     ResponseSource: "LOCAL_LLM",
                     ModelVersion: response.modelName,
-                    OccurredAtUtc: DateTimeOffset.UtcNow),
+                    OccurredAtUtc: DateTimeOffset.UtcNow,
+                    InteractionId: persistedTurn?.InteractionId),
                 cancellationToken);
 
             return response;

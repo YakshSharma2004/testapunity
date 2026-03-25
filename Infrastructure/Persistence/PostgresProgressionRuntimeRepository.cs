@@ -67,13 +67,13 @@ namespace testapi1.Infrastructure.Persistence
             await _db.SaveChangesAsync(cancellationToken);
         }
 
-        public async Task PersistTurnAsync(
+        public async Task<PersistedTurnRecord> PersistTurnAsync(
             TurnPersistenceRecord record,
             CancellationToken cancellationToken = default)
         {
             var occurredAtUtc = record.OccurredAtUtc.UtcDateTime;
 
-            _db.Interactions.Add(new Interaction
+            var interaction = new Interaction
             {
                 PlayerId = record.PlayerId,
                 NpcId = record.NpcId,
@@ -92,7 +92,9 @@ namespace testapi1.Infrastructure.Persistence
                 ModelVersion = string.IsNullOrWhiteSpace(record.ModelVersion) ? "unknown" : record.ModelVersion,
                 RewardScore = 0.0000m,
                 OutcomeFlags = $"turn:{record.TurnCount};reason:{record.TransitionReason}"
-            });
+            };
+
+            _db.Interactions.Add(interaction);
 
             var state = await _db.PlayerNpcStates.FindAsync(new object[] { record.PlayerId, record.NpcId }, cancellationToken);
             if (state is null)
@@ -118,6 +120,11 @@ namespace testapi1.Infrastructure.Persistence
             state.LastInteractionAt = occurredAtUtc;
 
             await _db.SaveChangesAsync(cancellationToken);
+            return new PersistedTurnRecord(
+                InteractionId: interaction.InteractionId,
+                PlayerId: record.PlayerId,
+                NpcId: record.NpcId,
+                OccurredAtUtc: record.OccurredAtUtc);
         }
 
         public async Task TouchPlayerNpcStateAsync(

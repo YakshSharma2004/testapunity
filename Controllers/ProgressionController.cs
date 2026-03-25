@@ -10,10 +10,14 @@ namespace testapi1.Controllers
     public sealed class ProgressionController : ControllerBase
     {
         private readonly IGameProgressionService _progressionService;
+        private readonly IPlayerTurnOrchestrator _turnOrchestrator;
 
-        public ProgressionController(IGameProgressionService progressionService)
+        public ProgressionController(
+            IGameProgressionService progressionService,
+            IPlayerTurnOrchestrator turnOrchestrator)
         {
             _progressionService = progressionService;
+            _turnOrchestrator = turnOrchestrator;
         }
 
         [HttpPost("start")]
@@ -71,7 +75,7 @@ namespace testapi1.Controllers
             ProgressionTurnResponse? response;
             try
             {
-                response = await _progressionService.ApplyTurnAsync(request, cancellationToken);
+                response = await _turnOrchestrator.ApplyAsync(request, cancellationToken);
             }
             catch (InvalidOperationException ex)
             {

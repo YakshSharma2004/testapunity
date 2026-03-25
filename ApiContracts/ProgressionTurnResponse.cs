@@ -3,6 +3,7 @@ namespace testapi1.ApiContracts
     public sealed class ProgressionTurnResponse
     {
         public string sessionId { get; set; } = "";
+        public string replyText { get; set; } = "";
         public string intent { get; set; } = "";
         public float confidence { get; set; }
         public string eventType { get; set; } = "";

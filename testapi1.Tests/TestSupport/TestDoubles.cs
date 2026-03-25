@@ -51,6 +51,39 @@ namespace testapi1.Tests.TestSupport
         }
     }
 
+    internal sealed class FixedPlayerTurnResolver : IPlayerTurnResolver
+    {
+        private readonly string _intent;
+        private readonly float _confidence;
+
+        public FixedPlayerTurnResolver(string intent = "ASK_OPEN_QUESTION", float confidence = 0.91f)
+        {
+            _intent = intent;
+            _confidence = confidence;
+        }
+
+        public Task<ResolvedPlayerTurn> ResolveAsync(
+            ProgressionTurnRequest request,
+            string npcId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new ResolvedPlayerTurn(
+                SessionId: request.sessionId ?? string.Empty,
+                Text: request.text ?? string.Empty,
+                NpcId: string.IsNullOrWhiteSpace(request.npcId) ? npcId : request.npcId,
+                ContextKey: request.contextKey ?? string.Empty,
+                DiscussedClueIds: request.discussedClueIds,
+                NormalizedText: request.text?.Trim().ToLowerInvariant() ?? string.Empty,
+                Intent: new IntentResponse
+                {
+                    intent = _intent,
+                    confidence = _confidence,
+                    notes = "test-double",
+                    modelVersion = "tests"
+                }));
+        }
+    }
+
     internal sealed class PassThroughNormalizer : ITextNormalizer
     {
         public string NormalizeForMatch(string input)
@@ -115,8 +148,10 @@ namespace testapi1.Tests.TestSupport
         private readonly Dictionary<(int PlayerId, int NpcId), PlayerNpcState> _states = new();
 
         public List<TurnPersistenceRecord> TurnRecords { get; } = new();
+        public List<PersistedTurnRecord> PersistedTurns { get; } = new();
         public List<(int PlayerId, int NpcId, DateTimeOffset AtUtc)> EnsureCalls { get; } = new();
         public List<(int PlayerId, int NpcId, DateTimeOffset AtUtc)> TouchCalls { get; } = new();
+        private long _nextInteractionId = 1;
 
         public void AddPlayer(int playerId)
         {
@@ -161,7 +196,7 @@ namespace testapi1.Tests.TestSupport
             return Task.CompletedTask;
         }
 
-        public Task PersistTurnAsync(TurnPersistenceRecord record, CancellationToken cancellationToken = default)
+        public Task<PersistedTurnRecord> PersistTurnAsync(TurnPersistenceRecord record, CancellationToken cancellationToken = default)
         {
             TurnRecords.Add(record);
             _states[(record.PlayerId, record.NpcId)] = new PlayerNpcState
@@ -175,7 +210,14 @@ namespace testapi1.Tests.TestSupport
                 Memory = record.TransitionReason,
                 LastInteractionAt = record.OccurredAtUtc.UtcDateTime
             };
-            return Task.CompletedTask;
+
+            var persisted = new PersistedTurnRecord(
+                InteractionId: _nextInteractionId++,
+                PlayerId: record.PlayerId,
+                NpcId: record.NpcId,
+                OccurredAtUtc: record.OccurredAtUtc);
+            PersistedTurns.Add(persisted);
+            return Task.FromResult(persisted);
         }
 
         public Task TouchPlayerNpcStateAsync(int playerId, int npcId, DateTimeOffset nowUtc, CancellationToken cancellationToken = default)

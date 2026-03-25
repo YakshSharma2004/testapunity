@@ -27,8 +27,7 @@ namespace testapi1.Tests
             var service = new NpcDialogueService(
                 retrieval,
                 llm,
-                new FixedIntentClassifier("PRESENT_EVIDENCE", 0.94f),
-                new PassThroughNormalizer(),
+                new FixedPlayerTurnResolver("PRESENT_EVIDENCE", 0.94f),
                 new StaticOptionsMonitor<LlmOptions>(new LlmOptions()),
                 NullLogger<NpcDialogueService>.Instance);
 
@@ -63,8 +62,7 @@ namespace testapi1.Tests
             var service = new NpcDialogueService(
                 retrieval,
                 llm,
-                new FixedIntentClassifier("CONTRADICTION", 0.88f),
-                new PassThroughNormalizer(),
+                new FixedPlayerTurnResolver("CONTRADICTION", 0.88f),
                 new StaticOptionsMonitor<LlmOptions>(new LlmOptions()),
                 NullLogger<NpcDialogueService>.Instance);
 
@@ -116,8 +114,7 @@ namespace testapi1.Tests
             var service = new NpcDialogueService(
                 retrieval,
                 llm,
-                new FixedIntentClassifier("ASK_OPEN_QUESTION", 0.82f),
-                new PassThroughNormalizer(),
+                new FixedPlayerTurnResolver("ASK_OPEN_QUESTION", 0.82f),
                 new StaticOptionsMonitor<LlmOptions>(new LlmOptions
                 {
                     Local = new LocalLlmOptions

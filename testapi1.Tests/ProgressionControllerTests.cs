@@ -10,7 +10,7 @@ namespace testapi1.Tests
         [Fact]
         public async Task ClickClue_Returns_BadRequest_For_Invalid_SessionId_Format()
         {
-            var controller = new ProgressionController(new StubProgressionService());
+            var controller = new ProgressionController(new StubProgressionService(), new StubTurnOrchestrator());
 
             var result = await controller.ClickClue(
                 new ProgressionClueClickRequest
@@ -27,7 +27,7 @@ namespace testapi1.Tests
         [Fact]
         public async Task ClickClue_Returns_BadRequest_For_Unknown_ClueId()
         {
-            var controller = new ProgressionController(new StubProgressionService());
+            var controller = new ProgressionController(new StubProgressionService(), new StubTurnOrchestrator());
 
             var result = await controller.ClickClue(
                 new ProgressionClueClickRequest
@@ -44,7 +44,7 @@ namespace testapi1.Tests
         [Fact]
         public async Task ClickClue_Returns_NotFound_For_Missing_Session()
         {
-            var controller = new ProgressionController(new MissingSessionProgressionService());
+            var controller = new ProgressionController(new MissingSessionProgressionService(), new StubTurnOrchestrator());
 
             var result = await controller.ClickClue(
                 new ProgressionClueClickRequest
@@ -55,6 +55,25 @@ namespace testapi1.Tests
                 CancellationToken.None);
 
             Assert.IsType<NotFoundObjectResult>(result.Result);
+        }
+
+        [Fact]
+        public async Task Turn_Returns_Ok_With_ReplyText_And_Snapshot()
+        {
+            var controller = new ProgressionController(new StubProgressionService(), new SuccessfulTurnOrchestrator());
+
+            var result = await controller.Turn(
+                new ProgressionTurnRequest
+                {
+                    sessionId = "ps_1234567890abcdef1234567890abcdef",
+                    text = "Tell me what happened."
+                },
+                CancellationToken.None);
+
+            var ok = Assert.IsType<OkObjectResult>(result.Result);
+            var payload = Assert.IsType<ProgressionTurnResponse>(ok.Value);
+            Assert.Equal("Stay with the facts.", payload.replyText);
+            Assert.Equal("ps_1234567890abcdef1234567890abcdef", payload.snapshot.sessionId);
         }
 
         private sealed class StubProgressionService : IGameProgressionService
@@ -77,6 +96,31 @@ namespace testapi1.Tests
             public Task<ProgressionSnapshotResponse?> GetSnapshotAsync(string sessionId, CancellationToken cancellationToken = default)
             {
                 throw new NotImplementedException();
+            }
+        }
+
+        private sealed class StubTurnOrchestrator : IPlayerTurnOrchestrator
+        {
+            public Task<ProgressionTurnResponse?> ApplyAsync(ProgressionTurnRequest request, CancellationToken cancellationToken = default)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        private sealed class SuccessfulTurnOrchestrator : IPlayerTurnOrchestrator
+        {
+            public Task<ProgressionTurnResponse?> ApplyAsync(ProgressionTurnRequest request, CancellationToken cancellationToken = default)
+            {
+                return Task.FromResult<ProgressionTurnResponse?>(new ProgressionTurnResponse
+                {
+                    sessionId = request.sessionId,
+                    replyText = "Stay with the facts.",
+                    snapshot = new ProgressionSnapshotResponse
+                    {
+                        sessionId = request.sessionId,
+                        npcId = "dylan"
+                    }
+                });
             }
         }
 

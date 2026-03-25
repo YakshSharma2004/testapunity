@@ -1,6 +1,43 @@
-@testapi1_HostAddress = http://localhost:5263
+@testapi1_HostAddress = http://localhost:5000
+@sessionId = ps_replace_me_after_start
 
-GET {{testapi1_HostAddress}}/weatherforecast/
+POST {{testapi1_HostAddress}}/api/v1/progression/start
+Content-Type: application/json
+
+{
+  "playerId": 1,
+  "caseId": "dylan-interrogation",
+  "npcId": "dylan"
+}
+
+###
+
+POST {{testapi1_HostAddress}}/api/v1/progression/clues/click
+Content-Type: application/json
+
+{
+  "sessionId": "{{sessionId}}",
+  "clueId": "elsa_email_draft",
+  "source": "desk"
+}
+
+###
+
+POST {{testapi1_HostAddress}}/api/v1/progression/turn
+Content-Type: application/json
+
+{
+  "sessionId": "{{sessionId}}",
+  "text": "Talk to me about Elsa's email.",
+  "contextKey": "",
+  "discussedClueIds": [
+    "elsa_email_draft"
+  ]
+}
+
+###
+
+GET {{testapi1_HostAddress}}/api/v1/progression/{{sessionId}}
 Accept: application/json
 
 ###

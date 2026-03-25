@@ -15,6 +15,7 @@ using testapi1.Services.Intent;
 using testapi1.Services.Llm;
 using testapi1.Services.Progression;
 using testapi1.Services.Redis;
+using testapi1.Services.Turns;
 using Microsoft.EntityFrameworkCore;
 using testapi1.Infrastructure.Persistence;
 
@@ -116,13 +117,19 @@ builder.Services.AddSingleton<IIntentClassifier>(sp =>
 
 builder.Services.AddSingleton<ILLMService, LlmService>();
 builder.Services.AddSingleton<IGameProgressionEngine, DylanProgressionEngine>();
+builder.Services.AddScoped<IPlayerTurnResolver, PlayerTurnResolver>();
 builder.Services.AddScoped<IProgressionSessionStore, PostgresProgressionSessionStore>();
 builder.Services.AddScoped<IProgressionCatalogRepository, PostgresProgressionCatalogRepository>();
 builder.Services.AddScoped<IProgressionRuntimeRepository, PostgresProgressionRuntimeRepository>();
 builder.Services.AddScoped<IIntentToProgressionEventMapper, IntentToProgressionEventMapper>();
-builder.Services.AddScoped<IGameProgressionService, GameProgressionService>();
+builder.Services.AddScoped<GameProgressionService>();
+builder.Services.AddScoped<IGameProgressionService>(sp => sp.GetRequiredService<GameProgressionService>());
+builder.Services.AddScoped<IResolvedProgressionTurnService>(sp => sp.GetRequiredService<GameProgressionService>());
+builder.Services.AddScoped<IPlayerTurnOrchestrator, PlayerTurnOrchestrator>();
 builder.Services.AddScoped<IRetrievalService, RetrievalService>();
-builder.Services.AddScoped<INpcDialogueService, NpcDialogueService>();
+builder.Services.AddScoped<NpcDialogueService>();
+builder.Services.AddScoped<INpcDialogueService>(sp => sp.GetRequiredService<NpcDialogueService>());
+builder.Services.AddScoped<IResolvedNpcDialogueService>(sp => sp.GetRequiredService<NpcDialogueService>());
 // ---------- BUILD APP ----------
 
 var app = builder.Build();

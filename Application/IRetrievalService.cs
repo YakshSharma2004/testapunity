@@ -58,5 +58,6 @@ namespace testapi1.Application
         string ResponseText,
         string ResponseSource,
         string ModelVersion,
-        DateTimeOffset OccurredAtUtc);
+        DateTimeOffset OccurredAtUtc,
+        long? InteractionId);
 }

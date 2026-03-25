@@ -5,30 +5,27 @@ using testapi1.Domain.Progression;
 
 namespace testapi1.Services.Progression
 {
-    public sealed class GameProgressionService : IGameProgressionService
+    public sealed class GameProgressionService : IGameProgressionService, IResolvedProgressionTurnService
     {
         private readonly IGameProgressionEngine _engine;
         private readonly IProgressionSessionStore _sessionStore;
-        private readonly IIntentClassifier _intentClassifier;
+        private readonly IPlayerTurnResolver _turnResolver;
         private readonly IIntentToProgressionEventMapper _eventMapper;
-        private readonly ITextNormalizer _normalizer;
         private readonly IOptionsMonitor<ProgressionOptions> _progressionOptions;
         private readonly IProgressionRuntimeRepository _runtimeRepository;
 
         public GameProgressionService(
             IGameProgressionEngine engine,
             IProgressionSessionStore sessionStore,
-            IIntentClassifier intentClassifier,
+            IPlayerTurnResolver turnResolver,
             IIntentToProgressionEventMapper eventMapper,
-            ITextNormalizer normalizer,
             IOptionsMonitor<ProgressionOptions> progressionOptions,
             IProgressionRuntimeRepository runtimeRepository)
         {
             _engine = engine;
             _sessionStore = sessionStore;
-            _intentClassifier = intentClassifier;
+            _turnResolver = turnResolver;
             _eventMapper = eventMapper;
-            _normalizer = normalizer;
             _progressionOptions = progressionOptions;
             _runtimeRepository = runtimeRepository;
         }
@@ -96,6 +93,21 @@ namespace testapi1.Services.Progression
                 return null;
             }
 
+            var resolvedTurn = await _turnResolver.ResolveAsync(request, session.NpcId, cancellationToken);
+            var execution = await ApplyResolvedTurnAsync(resolvedTurn, cancellationToken);
+            return execution?.Response;
+        }
+
+        public async Task<ProgressionTurnExecutionResult?> ApplyResolvedTurnAsync(
+            ResolvedPlayerTurn turn,
+            CancellationToken cancellationToken = default)
+        {
+            var session = await _sessionStore.GetAsync(turn.SessionId, cancellationToken);
+            if (session is null)
+            {
+                return null;
+            }
+
             var npc = await _runtimeRepository.GetNpcByCodeAsync(session.NpcId, cancellationToken);
             if (npc is null)
             {
@@ -104,23 +116,21 @@ namespace testapi1.Services.Progression
 
             var intentRequest = new IntentRequest
             {
-                Text = request.text ?? string.Empty,
-                NpcId = string.IsNullOrWhiteSpace(request.npcId) ? session.NpcId : request.npcId,
-                ContextKey = request.contextKey ?? string.Empty
+                Text = turn.Text,
+                NpcId = turn.NpcId,
+                ContextKey = turn.ContextKey
             };
 
-            var intent = await _intentClassifier.ClassifyAsync(intentRequest, cancellationToken);
-            var normalizedText = _normalizer.NormalizeForMatch(intentRequest.Text);
             var mapped = await _eventMapper.MapAsync(
                 intentRequest,
-                intent,
-                normalizedText,
+                turn.Intent,
+                turn.NormalizedText,
                 DateTimeOffset.UtcNow,
                 cancellationToken);
 
             var sessionWithDiscussion = ApplyDiscussedClues(
                 session,
-                request.discussedClueIds,
+                turn.DiscussedClueIds,
                 mapped.Event.OccurredAtUtc);
 
             var sessionWithGateUpdates = CaseProgressionEvaluator.Recalculate(
@@ -132,34 +142,37 @@ namespace testapi1.Services.Progression
 
             await _sessionStore.SetAsync(finalState, cancellationToken);
 
-            await _runtimeRepository.PersistTurnAsync(
+            var persistedTurn = await _runtimeRepository.PersistTurnAsync(
                 new TurnPersistenceRecord(
                     PlayerId: finalState.PlayerId,
                     NpcId: npc.NpcId,
                     ActionId: mapped.ActionId,
                     OccurredAtUtc: mapped.Event.OccurredAtUtc,
-                    IntentCode: intent.intent ?? "unknown",
+                    IntentCode: turn.Intent.intent ?? "unknown",
                     EventType: mapped.Event.EventType.ToString(),
-                    PlayerText: request.text ?? string.Empty,
+                    PlayerText: turn.Text,
                     TransitionReason: transition.Reason,
                     ComposureState: finalState.ComposureState.ToString(),
-                    ModelVersion: intent.modelVersion ?? "unknown",
+                    ModelVersion: turn.Intent.modelVersion ?? "unknown",
                     TrustScore: finalState.TrustScore,
                     ShutdownScore: finalState.ShutdownScore,
                     TurnCount: finalState.TurnCount),
                 cancellationToken);
 
-            return new ProgressionTurnResponse
+            var response = new ProgressionTurnResponse
             {
                 sessionId = finalState.SessionId,
-                intent = intent.intent ?? "unknown",
-                confidence = intent.confidence,
+                replyText = string.Empty,
+                intent = turn.Intent.intent ?? "unknown",
+                confidence = turn.Intent.confidence,
                 eventType = mapped.Event.EventType.ToString(),
                 evidenceId = mapped.Event.EvidenceId?.ToString() ?? string.Empty,
                 transitioned = transition.Transitioned,
                 transitionReason = transition.Reason,
                 snapshot = await ToSnapshotAsync(finalState, cancellationToken)
             };
+
+            return new ProgressionTurnExecutionResult(response, persistedTurn);
         }
 
         public async Task<ProgressionClueClickResponse?> ApplyClueClickAsync(

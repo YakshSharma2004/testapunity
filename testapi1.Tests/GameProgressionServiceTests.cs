@@ -173,9 +173,8 @@ namespace testapi1.Tests
             return new GameProgressionService(
                 engine: new DylanProgressionEngine(),
                 sessionStore: store,
-                intentClassifier: new FixedIntentClassifier(),
+                turnResolver: new FixedPlayerTurnResolver(),
                 eventMapper: new FixedProgressionEventMapper(),
-                normalizer: new PassThroughNormalizer(),
                 progressionOptions: new StaticOptionsMonitor<ProgressionOptions>(options ?? new ProgressionOptions()),
                 runtimeRepository: runtimeRepository);
         }

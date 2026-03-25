@@ -123,15 +123,37 @@ namespace testapi1.Services
             CancellationToken cancellationToken = default)
         {
             var occurredAtUtc = record.OccurredAtUtc.UtcDateTime;
-            var recentCandidates = await _db.Interactions
-                .Where(item => item.PlayerId == record.PlayerId && item.NpcId == record.NpcDbId)
-                .OrderByDescending(item => item.OccurredAt)
-                .Take(5)
-                .ToListAsync(cancellationToken);
+            Interaction? interaction;
 
-            var interaction = recentCandidates.FirstOrDefault(item =>
-                string.Equals(item.PlayerText ?? string.Empty, record.PlayerText ?? string.Empty, StringComparison.Ordinal) &&
-                Math.Abs((item.OccurredAt - occurredAtUtc).TotalMinutes) <= 10d);
+            if (record.InteractionId.HasValue)
+            {
+                interaction = await _db.Interactions
+                    .FirstOrDefaultAsync(item => item.InteractionId == record.InteractionId.Value, cancellationToken);
+
+                if (interaction is null)
+                {
+                    throw new InvalidOperationException(
+                        $"Interaction '{record.InteractionId.Value}' was not found for session '{record.SessionId}'.");
+                }
+
+                if (interaction.PlayerId != record.PlayerId || interaction.NpcId != record.NpcDbId)
+                {
+                    throw new InvalidOperationException(
+                        $"Interaction '{record.InteractionId.Value}' does not belong to player '{record.PlayerId}' and NPC '{record.NpcDbId}'.");
+                }
+            }
+            else
+            {
+                var recentCandidates = await _db.Interactions
+                    .Where(item => item.PlayerId == record.PlayerId && item.NpcId == record.NpcDbId)
+                    .OrderByDescending(item => item.OccurredAt)
+                    .Take(5)
+                    .ToListAsync(cancellationToken);
+
+                interaction = recentCandidates.FirstOrDefault(item =>
+                    string.Equals(item.PlayerText ?? string.Empty, record.PlayerText ?? string.Empty, StringComparison.Ordinal) &&
+                    Math.Abs((item.OccurredAt - occurredAtUtc).TotalMinutes) <= 10d);
+            }
 
             if (interaction is null)
             {

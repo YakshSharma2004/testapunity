@@ -10,6 +10,14 @@ ASP.NET Core backend for the interrogation prototype. This branch uses:
 
 This README is the fastest path from a fresh clone to a working local setup.
 
+The supported Unity-facing flow is now:
+
+- `POST /api/v1/progression/start` once when a session begins
+- `POST /api/v1/progression/clues/click` when the player discovers a clue
+- `POST /api/v1/progression/turn` for every entered text message
+
+Legacy helper endpoints such as `intent/classify`, `dialogue/normalise`, and `llm/generate` are still available for manual diagnostics, but they are no longer the supported client integration path.
+
 ## Prerequisites
 
 Install these first:
@@ -203,7 +211,53 @@ That profile uses:
 - `https://localhost:7219`
 - `http://localhost:5263`
 
-## 9. Optional Verification
+## 9. Unity Client Flow
+
+Start the session once:
+
+```text
+POST /api/v1/progression/start
+{
+  "playerId": 1,
+  "caseId": "dylan-interrogation",
+  "npcId": "dylan"
+}
+```
+
+Store the returned `sessionId` on the Unity side.
+
+When the player discovers a clue:
+
+```text
+POST /api/v1/progression/clues/click
+{
+  "sessionId": "ps_<session_id>",
+  "clueId": "elsa_email_draft",
+  "source": "desk"
+}
+```
+
+When the player submits a chat message:
+
+```text
+POST /api/v1/progression/turn
+{
+  "sessionId": "ps_<session_id>",
+  "text": "Talk to me about Elsa's email.",
+  "contextKey": "",
+  "discussedClueIds": ["elsa_email_draft"]
+}
+```
+
+`progression/turn` now performs the full chat pipeline in one call:
+
+- normalize text
+- classify intent once
+- update progression state
+- generate the NPC reply
+- return both `replyText` and the updated `snapshot`
+
+## 10. Optional Verification
 
 Check the dependency probe:
 
@@ -214,10 +268,10 @@ GET /api/v1/infra/dependencies
 Run tests:
 
 ```powershell
-dotnet test .\testapi1.Tests\testapi1.Tests.csproj --no-restore -v minimal
+dotnet test .\testapi1.Tests\testapi1.Tests.csproj -v minimal
 ```
 
-## 10. Local LLM Status
+## 11. Local LLM Status
 
 The backend already supports a localhost-first LLM configuration through these env keys:
 
@@ -294,7 +348,7 @@ dotnet run --launch-profile http
 Run tests:
 
 ```powershell
-dotnet test .\testapi1.Tests\testapi1.Tests.csproj --no-restore -v minimal
+dotnet test .\testapi1.Tests\testapi1.Tests.csproj -v minimal
 ```
 
 ## Troubleshooting
