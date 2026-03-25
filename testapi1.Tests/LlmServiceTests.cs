@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using testapi1.ApiContracts;
 using testapi1.Services;
@@ -98,6 +99,43 @@ namespace testapi1.Tests
             Assert.Equal(1, localHandler.CallCount);
         }
 
+        [Fact]
+        public async Task GenerateResponseAsync_SendsSeed_ForLocalProvider_WhenConfigured()
+        {
+            var localHandler = new StubHttpMessageHandler(_ => BuildChatResponse(
+                "local-model",
+                """{"replyText":"Keep it simple.","allowedTopicsUsed":["public_story"]}"""));
+
+            var service = new LlmService(
+                new StubHttpClientFactory(new Dictionary<string, HttpClient>
+                {
+                    ["llm-local"] = new HttpClient(localHandler),
+                    ["llm-remote"] = new HttpClient(new StubHttpMessageHandler(_ => throw new Xunit.Sdk.XunitException("Remote should not be called.")))
+                }),
+                new StaticOptionsMonitor<LlmOptions>(new LlmOptions
+                {
+                    Local = new LocalLlmOptions
+                    {
+                        Enabled = true,
+                        BaseUrl = "http://localhost:11434",
+                        Model = "qwen2.5:3b",
+                        Seed = 17
+                    }
+                }),
+                NullLogger<LlmService>.Instance);
+
+            await service.GenerateResponseAsync(new LlmPromptPayload
+            {
+                promptText = "context",
+                requireJson = true
+            });
+
+            Assert.NotNull(localHandler.LastRequestBody);
+            using var document = JsonDocument.Parse(localHandler.LastRequestBody!);
+            Assert.True(document.RootElement.TryGetProperty("seed", out var seedElement));
+            Assert.Equal(17, seedElement.GetInt32());
+        }
+
         private static HttpResponseMessage BuildChatResponse(string model, string messageContent)
         {
             var payload = $$"""
@@ -148,10 +186,14 @@ namespace testapi1.Tests
             }
 
             public int CallCount { get; private set; }
+            public string? LastRequestBody { get; private set; }
 
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 CallCount++;
+                LastRequestBody = request.Content is null
+                    ? null
+                    : request.Content.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult();
                 return Task.FromResult(_handler(request));
             }
         }

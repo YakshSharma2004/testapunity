@@ -49,6 +49,8 @@ namespace testapi1.Services.Dialogue
             }
 
             var normalizedText = _normalizer.NormalizeForMatch(request.text);
+            var llmOptions = _llmOptions.CurrentValue;
+            var useCompactLocalPrompt = IsLocalConfigured(llmOptions.Local);
             var intent = await _intentClassifier.ClassifyAsync(
                 new IntentRequest
                 {
@@ -65,9 +67,9 @@ namespace testapi1.Services.Dialogue
                 npcId = world.NpcId,
                 contextKey = request.contextKey ?? string.Empty,
                 systemContext = BuildSystemPrompt(world),
-                promptText = BuildUserPrompt(world, request.text, normalizedText, intent, referencedTopics),
-                maxTokens = request.maxTokens > 0 ? request.maxTokens : _llmOptions.CurrentValue.Generation.MaxTokens,
-                temperature = _llmOptions.CurrentValue.Generation.Temperature,
+                promptText = BuildUserPrompt(world, request.text, normalizedText, intent, referencedTopics, llmOptions.Local, useCompactLocalPrompt),
+                maxTokens = request.maxTokens > 0 ? request.maxTokens : llmOptions.Generation.MaxTokens,
+                temperature = llmOptions.Generation.Temperature,
                 requireJson = true
             };
 
@@ -178,8 +180,20 @@ namespace testapi1.Services.Dialogue
             string rawText,
             string normalizedText,
             IntentResponse intent,
-            IReadOnlyList<string> referencedTopics)
+            IReadOnlyList<string> referencedTopics,
+            LocalLlmOptions localOptions,
+            bool useCompactLocalPrompt)
         {
+            var recentConversation = useCompactLocalPrompt
+                ? TakeLast(world.RecentExchanges, localOptions.MaxRecentExchanges)
+                : world.RecentExchanges;
+            var loreSnippets = useCompactLocalPrompt
+                ? world.LoreSnippets.Take(Math.Max(1, localOptions.MaxLoreSnippets)).ToList()
+                : world.LoreSnippets;
+            var timeline = useCompactLocalPrompt
+                ? world.Timeline.Take(Math.Max(1, localOptions.MaxTimelineItems)).ToList()
+                : world.Timeline;
+
             var payload = new
             {
                 npc = new
@@ -213,16 +227,53 @@ namespace testapi1.Services.Dialogue
                 },
                 worldview = new
                 {
-                    publicStory = world.PublicStory,
-                    internalTruth = world.TruthSummary,
-                    timeline = world.Timeline,
-                    relationship = world.Relationship
+                    publicStory = useCompactLocalPrompt ? Truncate(world.PublicStory, localOptions.MaxPublicStoryChars) : world.PublicStory,
+                    internalTruth = useCompactLocalPrompt ? Truncate(world.TruthSummary, localOptions.MaxTruthSummaryChars) : world.TruthSummary,
+                    timeline,
+                    relationship = new
+                    {
+                        world.Relationship.Trust,
+                        world.Relationship.Patience,
+                        world.Relationship.Curiosity,
+                        world.Relationship.Openness,
+                        Memory = useCompactLocalPrompt
+                            ? Truncate(world.Relationship.Memory, localOptions.MaxRelationshipMemoryChars)
+                            : world.Relationship.Memory
+                    }
                 },
-                recentConversation = world.RecentExchanges,
-                lore = world.LoreSnippets
+                recentConversation,
+                lore = loreSnippets
             };
 
             return JsonSerializer.Serialize(payload, PromptJsonOptions);
+        }
+
+        private static bool IsLocalConfigured(LocalLlmOptions options)
+        {
+            return options.Enabled &&
+                   !string.IsNullOrWhiteSpace(options.BaseUrl) &&
+                   !string.IsNullOrWhiteSpace(options.Model);
+        }
+
+        private static IReadOnlyList<T> TakeLast<T>(IReadOnlyList<T> items, int count)
+        {
+            if (count <= 0 || items.Count == 0)
+            {
+                return Array.Empty<T>();
+            }
+
+            var skip = Math.Max(0, items.Count - count);
+            return items.Skip(skip).ToList();
+        }
+
+        private static string Truncate(string value, int maxChars)
+        {
+            if (string.IsNullOrEmpty(value) || maxChars <= 0 || value.Length <= maxChars)
+            {
+                return value;
+            }
+
+            return value[..maxChars];
         }
 
         private static bool TryParseModelReply(string responseText, out ModelReply reply)

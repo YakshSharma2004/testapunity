@@ -55,6 +55,7 @@ namespace testapi1.Services
                         apiKey: string.Empty,
                         model: options.Local.Model,
                         timeoutMs: options.Local.TimeoutMs,
+                        seed: options.Local.Seed,
                         payload: payload,
                         defaults: options.Generation,
                         usedFallback: false,
@@ -88,6 +89,7 @@ namespace testapi1.Services
                         apiKey: options.Remote.ApiKey,
                         model: options.Remote.Model,
                         timeoutMs: options.Remote.TimeoutMs,
+                        seed: null,
                         payload: payload,
                         defaults: options.Generation,
                         usedFallback: localFailure is not null,
@@ -124,6 +126,7 @@ namespace testapi1.Services
             string apiKey,
             string model,
             int timeoutMs,
+            int? seed,
             LlmPromptPayload payload,
             LlmGenerationOptions defaults,
             bool usedFallback,
@@ -145,6 +148,11 @@ namespace testapi1.Services
                 ["temperature"] = payload.temperature ?? defaults.Temperature,
                 ["stream"] = false
             };
+
+            if (seed.HasValue)
+            {
+                body["seed"] = seed.Value;
+            }
 
             if (payload.requireJson)
             {
