@@ -35,9 +35,25 @@ namespace testapi1.Services
             var options = _optionsMonitor.CurrentValue;
             var localEnabled = options.Local.Enabled && IsConfigured(options.Local.BaseUrl, options.Local.Model);
             var remoteEnabled = options.Remote.Enabled && IsConfigured(options.Remote.BaseUrl, options.Remote.Model);
+            var requestedMaxTokens = payload.maxTokens > 0 ? payload.maxTokens : options.Generation.MaxTokens;
+            var requestedTemperature = payload.temperature ?? options.Generation.Temperature;
+
+            _logger.LogInformation(
+                "LLM generation requested for conversation {ConversationId}. LocalConfigured={LocalConfigured}; RemoteConfigured={RemoteConfigured}; RequireJson={RequireJson}; RequestedMaxTokens={RequestedMaxTokens}; RequestedTemperature={RequestedTemperature}",
+                payload.conversationId,
+                localEnabled,
+                remoteEnabled,
+                payload.requireJson,
+                requestedMaxTokens,
+                requestedTemperature);
 
             if (!localEnabled && !remoteEnabled)
             {
+                _logger.LogError(
+                    "No LLM providers are configured for conversation {ConversationId}. LocalEnabledFlag={LocalEnabledFlag}; RemoteEnabledFlag={RemoteEnabledFlag}",
+                    payload.conversationId,
+                    options.Local.Enabled,
+                    options.Remote.Enabled);
                 throw new InvalidOperationException(
                     "No LLM providers are configured. Set Llm:Local:Model for localhost inference or enable Llm:Remote.");
             }
@@ -68,13 +84,22 @@ namespace testapi1.Services
 
                     throw new InvalidOperationException("Local LLM returned a non-JSON response while JSON was required.");
                 }
-                catch (Exception ex) when (remoteEnabled)
+                catch (Exception ex)
                 {
                     localFailure = ex;
                     _logger.LogWarning(
                         ex,
-                        "Local LLM provider failed for conversation {ConversationId}. Falling back to remote provider.",
-                        payload.conversationId);
+                        remoteEnabled
+                            ? "Local LLM provider failed for conversation {ConversationId}. Target={Target}; Model={Model}. Falling back to remote provider."
+                            : "Local LLM provider failed for conversation {ConversationId}. Target={Target}; Model={Model}. No remote provider is available.",
+                        payload.conversationId,
+                        DescribeTarget(options.Local.BaseUrl),
+                        options.Local.Model);
+
+                    if (!remoteEnabled)
+                    {
+                        throw;
+                    }
                 }
             }
 
@@ -106,12 +131,24 @@ namespace testapi1.Services
                 {
                     if (localFailure is not null)
                     {
+                        _logger.LogError(
+                            ex,
+                            "Remote LLM provider failed after local fallback for conversation {ConversationId}. Target={Target}; Model={Model}",
+                            payload.conversationId,
+                            DescribeTarget(options.Remote.BaseUrl),
+                            options.Remote.Model);
                         throw new AggregateException(
                             "Both local and remote LLM providers failed.",
                             localFailure,
                             ex);
                     }
 
+                    _logger.LogWarning(
+                        ex,
+                        "Remote LLM provider failed for conversation {ConversationId}. Target={Target}; Model={Model}",
+                        payload.conversationId,
+                        DescribeTarget(options.Remote.BaseUrl),
+                        options.Remote.Model);
                     throw;
                 }
             }
@@ -133,7 +170,18 @@ namespace testapi1.Services
             CancellationToken cancellationToken)
         {
             var client = _httpClientFactory.CreateClient(clientName);
-            using var request = new HttpRequestMessage(HttpMethod.Post, BuildChatCompletionsUri(baseUrl));
+            var requestUri = BuildChatCompletionsUri(baseUrl);
+            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+
+            _logger.LogInformation(
+                "Calling {Provider} LLM provider for conversation {ConversationId}. Target={Target}; RequestedModel={RequestedModel}; RequireJson={RequireJson}; UsedFallback={UsedFallback}; TimeoutMs={TimeoutMs}",
+                providerName,
+                payload.conversationId,
+                requestUri.Authority,
+                model,
+                payload.requireJson,
+                usedFallback,
+                timeoutMs > 0 ? timeoutMs : 60000);
 
             if (!string.IsNullOrWhiteSpace(apiKey))
             {
@@ -176,6 +224,15 @@ namespace testapi1.Services
             var responseBody = await response.Content.ReadAsStringAsync(timeoutCts.Token);
             if (!response.IsSuccessStatusCode)
             {
+                _logger.LogWarning(
+                    "{Provider} LLM provider returned non-success status for conversation {ConversationId}. Target={Target}; RequestedModel={RequestedModel}; StatusCode={StatusCode}; ReasonPhrase={ReasonPhrase}; BodyPreview={BodyPreview}",
+                    providerName,
+                    payload.conversationId,
+                    requestUri.Authority,
+                    model,
+                    (int)response.StatusCode,
+                    response.ReasonPhrase ?? string.Empty,
+                    TruncateForLog(responseBody));
                 throw new HttpRequestException(
                     $"{providerName} LLM request failed: {(int)response.StatusCode} ({response.ReasonPhrase}). Body: {responseBody}");
             }
@@ -183,13 +240,27 @@ namespace testapi1.Services
             using var document = JsonDocument.Parse(responseBody);
             var root = document.RootElement;
             var content = ExtractContent(root);
+            var responseModel = GetString(root, "model") ?? model;
+            var finishReason = ExtractFinishReason(root);
+            var tokensUsed = ExtractTotalTokens(root);
+
+            _logger.LogInformation(
+                "{Provider} LLM provider succeeded for conversation {ConversationId}. Target={Target}; RequestedModel={RequestedModel}; ResponseModel={ResponseModel}; FinishReason={FinishReason}; TokensUsed={TokensUsed}; UsedFallback={UsedFallback}",
+                providerName,
+                payload.conversationId,
+                requestUri.Authority,
+                model,
+                responseModel,
+                string.IsNullOrWhiteSpace(finishReason) ? "completed" : finishReason,
+                tokensUsed,
+                usedFallback);
 
             return new LlmRawResponse
             {
                 responseText = content,
-                modelName = GetString(root, "model") ?? model,
-                tokensUsed = ExtractTotalTokens(root),
-                finishReason = ExtractFinishReason(root),
+                modelName = responseModel,
+                tokensUsed = tokensUsed,
+                finishReason = finishReason,
                 provider = providerName,
                 usedFallback = usedFallback
             };
@@ -236,6 +307,33 @@ namespace testapi1.Services
             }
 
             return new Uri($"{trimmed}/v1/chat/completions", UriKind.Absolute);
+        }
+
+        private static string DescribeTarget(string baseUrl)
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                return "(unconfigured)";
+            }
+
+            try
+            {
+                return BuildChatCompletionsUri(baseUrl).Authority;
+            }
+            catch (Exception)
+            {
+                return baseUrl.Trim();
+            }
+        }
+
+        private static string TruncateForLog(string value, int maxLength = 400)
+        {
+            if (string.IsNullOrWhiteSpace(value) || value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value[..maxLength];
         }
 
         private static string ExtractContent(JsonElement root)

@@ -137,12 +137,21 @@ var app = builder.Build();
 var redisTarget = DependencyTargetParser.GetRedisTarget(builder.Configuration.GetConnectionString("Redis"));
 var qdrantTarget = DependencyTargetParser.GetQdrantTarget(builder.Configuration["Qdrant:BaseUrl"]);
 var postgresTarget = DependencyTargetParser.GetPostgresTarget(builder.Configuration.GetConnectionString("Postgres"));
+var llmOptionsSnapshot = builder.Configuration.GetSection("Llm").Get<LlmOptions>() ?? new LlmOptions();
 app.Logger.LogInformation(
     "Dependency targets configured (host:port only). Redis={RedisTarget}; Qdrant={QdrantTarget}; Postgres={PostgresTarget}; DotEnvVariablesLoaded={DotEnvLoadedCount}",
     redisTarget,
     qdrantTarget,
     postgresTarget,
     dotEnvLoadedCount);
+app.Logger.LogInformation(
+    "LLM configuration loaded (host:port only). LocalEnabled={LocalEnabled}; LocalTarget={LocalTarget}; LocalModel={LocalModel}; RemoteEnabled={RemoteEnabled}; RemoteTarget={RemoteTarget}; RemoteModel={RemoteModel}",
+    llmOptionsSnapshot.Local.Enabled,
+    DescribeUrlTarget(llmOptionsSnapshot.Local.BaseUrl),
+    string.IsNullOrWhiteSpace(llmOptionsSnapshot.Local.Model) ? "(unconfigured)" : llmOptionsSnapshot.Local.Model,
+    llmOptionsSnapshot.Remote.Enabled,
+    DescribeUrlTarget(llmOptionsSnapshot.Remote.BaseUrl),
+    string.IsNullOrWhiteSpace(llmOptionsSnapshot.Remote.Model) ? "(unconfigured)" : llmOptionsSnapshot.Remote.Model);
 
 app.UseCors("UnityCors");
 app.UseSerilogRequestLogging();
@@ -151,3 +160,20 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+static string DescribeUrlTarget(string? baseUrl)
+{
+    if (string.IsNullOrWhiteSpace(baseUrl))
+    {
+        return "(unconfigured)";
+    }
+
+    try
+    {
+        return new Uri(baseUrl, UriKind.Absolute).Authority;
+    }
+    catch (Exception)
+    {
+        return baseUrl.Trim();
+    }
+}

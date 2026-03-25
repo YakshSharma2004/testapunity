@@ -42,6 +42,9 @@ namespace testapi1.Services.Dialogue
             var world = await _retrievalService.GetNpcDialogueContextAsync(request.sessionId, cancellationToken);
             if (world is null)
             {
+                _logger.LogWarning(
+                    "NPC dialogue context was not found for session {SessionId}.",
+                    request.sessionId);
                 return null;
             }
 
@@ -68,6 +71,9 @@ namespace testapi1.Services.Dialogue
             var world = await _retrievalService.GetNpcDialogueContextAsync(request.sessionId, cancellationToken);
             if (world is null)
             {
+                _logger.LogWarning(
+                    "NPC dialogue context was not found for session {SessionId} during resolved turn generation.",
+                    request.sessionId);
                 return null;
             }
 
@@ -83,6 +89,7 @@ namespace testapi1.Services.Dialogue
         {
             var llmOptions = _llmOptions.CurrentValue;
             var useCompactLocalPrompt = IsLocalConfigured(llmOptions.Local);
+            var remoteConfigured = IsRemoteConfigured(llmOptions.Remote);
             var referencedTopics = ExtractReferencedTopics(turn.NormalizedText);
             var promptPayload = new LlmPromptPayload
             {
@@ -96,11 +103,30 @@ namespace testapi1.Services.Dialogue
                 requireJson = true
             };
 
+            _logger.LogInformation(
+                "NPC dialogue generation started for session {SessionId}. NpcId={NpcId}; State={State}; Intent={Intent}; AllowedTopicCount={AllowedTopicCount}; DiscussedClueCount={DiscussedClueCount}; LocalConfigured={LocalConfigured}; RemoteConfigured={RemoteConfigured}",
+                world.SessionId,
+                world.NpcId,
+                world.Progression.State,
+                turn.Intent.intent ?? "unknown",
+                world.AllowedTopics.Count,
+                world.Progression.DiscussedClues.Count,
+                useCompactLocalPrompt,
+                remoteConfigured);
+
             try
             {
                 var raw = await _llmService.GenerateResponseAsync(promptPayload, cancellationToken);
                 if (!TryParseModelReply(raw.responseText, out var modelReply))
                 {
+                    _logger.LogWarning(
+                        "LLM returned invalid NPC dialogue JSON for session {SessionId}. Provider={Provider}; Model={Model}; UsedFallback={UsedFallback}; FinishReason={FinishReason}; ResponseLength={ResponseLength}",
+                        world.SessionId,
+                        raw.provider,
+                        raw.modelName,
+                        raw.usedFallback,
+                        string.IsNullOrWhiteSpace(raw.finishReason) ? "completed" : raw.finishReason,
+                        raw.responseText?.Length ?? 0);
                     throw new InvalidOperationException("LLM reply was not valid NPC dialogue JSON.");
                 }
 
@@ -123,9 +149,19 @@ namespace testapi1.Services.Dialogue
                 }
 
                 var replyText = modelReply.replyText?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(replyText) ||
-                    ViolatesAdmissionPolicy(replyText, world.Progression.State))
+                var violatedAdmissionPolicy = ViolatesAdmissionPolicy(replyText, world.Progression.State);
+                if (string.IsNullOrWhiteSpace(replyText) || violatedAdmissionPolicy)
                 {
+                    _logger.LogWarning(
+                        "LLM reply was rejected by NPC dialogue guardrails for session {SessionId}. Provider={Provider}; Model={Model}; UsedFallback={UsedFallback}; FinishReason={FinishReason}; EmptyReply={EmptyReply}; ViolatedAdmissionPolicy={ViolatedAdmissionPolicy}; CandidateTopics={CandidateTopics}",
+                        world.SessionId,
+                        raw.provider,
+                        raw.modelName,
+                        raw.usedFallback,
+                        string.IsNullOrWhiteSpace(raw.finishReason) ? "completed" : raw.finishReason,
+                        string.IsNullOrWhiteSpace(replyText),
+                        violatedAdmissionPolicy,
+                        string.Join(", ", filteredTopics));
                     return await BuildAndPersistSafeFallbackAsync(
                         world,
                         request.text,
@@ -162,14 +198,28 @@ namespace testapi1.Services.Dialogue
                         InteractionId: persistedTurn?.InteractionId),
                     cancellationToken);
 
+                _logger.LogInformation(
+                    "NPC dialogue generation completed for session {SessionId}. Provider={Provider}; Model={Model}; UsedFallback={UsedFallback}; FinishReason={FinishReason}; AllowedTopicsUsed={AllowedTopicsUsed}; ReplyLength={ReplyLength}",
+                    world.SessionId,
+                    response.provider,
+                    response.modelName,
+                    response.usedFallback,
+                    response.finishReason,
+                    string.Join(", ", response.allowedTopicsUsed),
+                    response.replyText.Length);
+
                 return response;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(
                     ex,
-                    "NPC dialogue generation failed for session {SessionId}. Returning guardrailed fallback reply.",
-                    request.sessionId);
+                    "NPC dialogue generation failed for session {SessionId}. State={State}; Intent={Intent}; LocalConfigured={LocalConfigured}; RemoteConfigured={RemoteConfigured}. Returning guardrailed fallback reply.",
+                    request.sessionId,
+                    world.Progression.State,
+                    turn.Intent.intent ?? "unknown",
+                    useCompactLocalPrompt,
+                    remoteConfigured);
 
                 return await BuildAndPersistSafeFallbackAsync(
                     world,
@@ -275,6 +325,13 @@ namespace testapi1.Services.Dialogue
         }
 
         private static bool IsLocalConfigured(LocalLlmOptions options)
+        {
+            return options.Enabled &&
+                   !string.IsNullOrWhiteSpace(options.BaseUrl) &&
+                   !string.IsNullOrWhiteSpace(options.Model);
+        }
+
+        private static bool IsRemoteConfigured(RemoteLlmOptions options)
         {
             return options.Enabled &&
                    !string.IsNullOrWhiteSpace(options.BaseUrl) &&
@@ -427,8 +484,16 @@ namespace testapi1.Services.Dialogue
                     ResponseSource: "LOCAL_LLM",
                     ModelVersion: response.modelName,
                     OccurredAtUtc: DateTimeOffset.UtcNow,
-                    InteractionId: persistedTurn?.InteractionId),
+                        InteractionId: persistedTurn?.InteractionId),
                 cancellationToken);
+
+            _logger.LogInformation(
+                "NPC dialogue fallback reply persisted for session {SessionId}. FinishReason={FinishReason}; State={State}; AllowedTopicsUsed={AllowedTopicsUsed}; ReplyLength={ReplyLength}",
+                world.SessionId,
+                finishReason,
+                world.Progression.State,
+                string.Join(", ", response.allowedTopicsUsed),
+                response.replyText.Length);
 
             return response;
         }
