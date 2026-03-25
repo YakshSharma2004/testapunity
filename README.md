@@ -61,15 +61,22 @@ QDRANT__APIKEY=
 REDIS__INSTANCENAME=testapi1:
 LLM__LOCAL__ENABLED=true
 LLM__LOCAL__BASEURL=http://localhost:11434
-LLM__LOCAL__MODEL=
-LLM__LOCAL__TIMEOUTMS=60000
+LLM__LOCAL__MODEL=qwen2.5:3b
+LLM__LOCAL__TIMEOUTMS=120000
+LLM__LOCAL__SEED=17
+LLM__LOCAL__MAXRECENTEXCHANGES=4
+LLM__LOCAL__MAXLORESNIPPETS=3
+LLM__LOCAL__MAXTIMELINEITEMS=3
+LLM__LOCAL__MAXPUBLICSTORYCHARS=500
+LLM__LOCAL__MAXTRUTHSUMMARYCHARS=500
+LLM__LOCAL__MAXRELATIONSHIPMEMORYCHARS=200
 LLM__REMOTE__ENABLED=false
 LLM__REMOTE__BASEURL=https://api.openai.com/v1
 LLM__REMOTE__MODEL=
 LLM__REMOTE__APIKEY=
 LLM__REMOTE__TIMEOUTMS=60000
-LLM__GENERATION__MAXTOKENS=256
-LLM__GENERATION__TEMPERATURE=0.35
+LLM__GENERATION__MAXTOKENS=160
+LLM__GENERATION__TEMPERATURE=0.20
 REMOTECONNECTIVITY__TIMEOUTMS=2000
 ```
 
@@ -217,8 +224,34 @@ The backend already supports a localhost-first LLM configuration through these e
 - `LLM__LOCAL__ENABLED`
 - `LLM__LOCAL__BASEURL`
 - `LLM__LOCAL__MODEL`
+- `LLM__LOCAL__SEED`
 
-Right now you can leave `LLM__LOCAL__MODEL` blank if you have not chosen or installed a model yet. The API can still boot, and the LLM route will fall back safely instead of blocking the rest of the project setup.
+For same-machine Ollama bring-up:
+
+```powershell
+ollama list
+curl http://localhost:11434/v1/models
+```
+
+Recommended local env values:
+
+```env
+LLM__LOCAL__ENABLED=true
+LLM__LOCAL__BASEURL=http://localhost:11434
+LLM__LOCAL__MODEL=qwen2.5:3b
+LLM__LOCAL__TIMEOUTMS=120000
+LLM__LOCAL__SEED=17
+LLM__GENERATION__MAXTOKENS=160
+LLM__GENERATION__TEMPERATURE=0.20
+```
+
+The dependency probe now includes Ollama as a separate check and validates that the configured local model appears in `GET /v1/models`.
+
+Later, if you move Ollama to a second laptop, only change:
+
+```env
+LLM__LOCAL__BASEURL=http://<second-laptop-ip>:11434
+```
 
 ## Common Commands
 
