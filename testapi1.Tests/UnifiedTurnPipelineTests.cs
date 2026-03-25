@@ -61,6 +61,7 @@ namespace testapi1.Tests
             Assert.Single(runtimeRepository.PersistedTurns);
             Assert.Single(retrieval.PersistedRecords);
             Assert.Equal(runtimeRepository.PersistedTurns[0].InteractionId, retrieval.PersistedRecords[0].InteractionId);
+            Assert.Equal(runtimeRepository.PersistedTurns[0].SessionId, retrieval.PersistedRecords[0].SessionId);
 
             Assert.NotNull(llm.LastPayload);
             using var document = JsonDocument.Parse(llm.LastPayload!.promptText);

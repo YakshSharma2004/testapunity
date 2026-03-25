@@ -144,6 +144,7 @@ namespace testapi1.Services.Progression
 
             var persistedTurn = await _runtimeRepository.PersistTurnAsync(
                 new TurnPersistenceRecord(
+                    SessionId: finalState.SessionId,
                     PlayerId: finalState.PlayerId,
                     NpcId: npc.NpcId,
                     ActionId: mapped.ActionId,

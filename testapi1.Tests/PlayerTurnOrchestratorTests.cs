@@ -34,6 +34,7 @@ namespace testapi1.Tests
             Assert.Equal("talk to me.", progression.LastTurn!.NormalizedText);
             Assert.NotNull(dialogue.LastPersistedTurn);
             Assert.Equal(42, dialogue.LastPersistedTurn!.InteractionId);
+            Assert.Equal("ps_11111111111111111111111111111111", dialogue.LastPersistedTurn.SessionId);
         }
 
         private static ProgressionSessionState BuildSession()
@@ -107,7 +108,7 @@ namespace testapi1.Tests
                             state = "InformationGathering"
                         }
                     },
-                    new PersistedTurnRecord(42, 1, 1, DateTimeOffset.UtcNow)));
+                    new PersistedTurnRecord(42, turn.SessionId, 1, 1, DateTimeOffset.UtcNow)));
             }
         }
 

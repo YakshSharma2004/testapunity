@@ -134,6 +134,13 @@ namespace testapi1.Infrastructure.Persistence
                 .HasForeignKey(i => i.ChosenActionId)
                 .IsRequired(false);
 
+            modelBuilder.Entity<Interaction>()
+                .Property(i => i.SessionId)
+                .HasMaxLength(100);
+
+            modelBuilder.Entity<Interaction>()
+                .HasIndex(i => new { i.SessionId, i.OccurredAt });
+
             // ── INTERACTION — decimal precision ──
             modelBuilder.Entity<Interaction>()
                 .Property(i => i.Sentiment).HasPrecision(4, 2);

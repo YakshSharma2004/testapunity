@@ -3,6 +3,7 @@
     public class Interaction
     {
         public long InteractionId { get; set; }
+        public string? SessionId { get; set; }
         public int PlayerId { get; set; }
         public int NpcId { get; set; }
         public DateTime OccurredAt { get; set; }

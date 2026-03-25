@@ -213,6 +213,7 @@ namespace testapi1.Tests.TestSupport
 
             var persisted = new PersistedTurnRecord(
                 InteractionId: _nextInteractionId++,
+                SessionId: record.SessionId,
                 PlayerId: record.PlayerId,
                 NpcId: record.NpcId,
                 OccurredAtUtc: record.OccurredAtUtc);

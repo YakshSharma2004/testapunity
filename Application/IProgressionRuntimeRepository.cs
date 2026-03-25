@@ -28,6 +28,7 @@ namespace testapi1.Application
     public sealed record NpcRuntimeIdentity(int NpcId, string NpcCode, string Name);
 
     public sealed record TurnPersistenceRecord(
+        string SessionId,
         int PlayerId,
         int NpcId,
         int? ActionId,
@@ -44,6 +45,7 @@ namespace testapi1.Application
 
     public sealed record PersistedTurnRecord(
         long InteractionId,
+        string SessionId,
         int PlayerId,
         int NpcId,
         DateTimeOffset OccurredAtUtc);

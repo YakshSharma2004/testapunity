@@ -75,6 +75,7 @@ namespace testapi1.Infrastructure.Persistence
 
             var interaction = new Interaction
             {
+                SessionId = record.SessionId,
                 PlayerId = record.PlayerId,
                 NpcId = record.NpcId,
                 OccurredAt = occurredAtUtc,
@@ -122,6 +123,7 @@ namespace testapi1.Infrastructure.Persistence
             await _db.SaveChangesAsync(cancellationToken);
             return new PersistedTurnRecord(
                 InteractionId: interaction.InteractionId,
+                SessionId: record.SessionId,
                 PlayerId: record.PlayerId,
                 NpcId: record.NpcId,
                 OccurredAtUtc: record.OccurredAtUtc);

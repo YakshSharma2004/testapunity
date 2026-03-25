@@ -53,7 +53,10 @@ namespace testapi1.Services
 
             var interactions = await _db.Interactions
                 .AsNoTracking()
-                .Where(item => item.PlayerId == progression.PlayerId && item.NpcId == npc.NpcId)
+                .Where(item =>
+                    item.SessionId == progression.SessionId &&
+                    item.PlayerId == progression.PlayerId &&
+                    item.NpcId == npc.NpcId)
                 .OrderByDescending(item => item.OccurredAt)
                 .Take(MaxRecentExchanges)
                 .ToListAsync(cancellationToken);
@@ -141,11 +144,21 @@ namespace testapi1.Services
                     throw new InvalidOperationException(
                         $"Interaction '{record.InteractionId.Value}' does not belong to player '{record.PlayerId}' and NPC '{record.NpcDbId}'.");
                 }
+
+                if (!string.IsNullOrWhiteSpace(interaction.SessionId) &&
+                    !string.Equals(interaction.SessionId, record.SessionId, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"Interaction '{record.InteractionId.Value}' does not belong to session '{record.SessionId}'.");
+                }
             }
             else
             {
                 var recentCandidates = await _db.Interactions
-                    .Where(item => item.PlayerId == record.PlayerId && item.NpcId == record.NpcDbId)
+                    .Where(item =>
+                        item.SessionId == record.SessionId &&
+                        item.PlayerId == record.PlayerId &&
+                        item.NpcId == record.NpcDbId)
                     .OrderByDescending(item => item.OccurredAt)
                     .Take(5)
                     .ToListAsync(cancellationToken);
@@ -159,6 +172,7 @@ namespace testapi1.Services
             {
                 interaction = new Interaction
                 {
+                    SessionId = record.SessionId,
                     PlayerId = record.PlayerId,
                     NpcId = record.NpcDbId,
                     OccurredAt = occurredAtUtc,
@@ -181,6 +195,7 @@ namespace testapi1.Services
             }
             else
             {
+                interaction.SessionId = record.SessionId;
                 interaction.ResponseText = record.ResponseText;
                 interaction.ResponseSource = record.ResponseSource;
                 interaction.ModelVersion = record.ModelVersion;

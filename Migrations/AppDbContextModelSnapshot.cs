@@ -177,6 +177,10 @@ namespace testapi1.Migrations
                         .HasPrecision(6, 4)
                         .HasColumnType("numeric(6,4)");
 
+                    b.Property<string>("SessionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<decimal>("Sentiment")
                         .HasPrecision(4, 2)
                         .HasColumnType("numeric(4,2)");
@@ -192,6 +196,8 @@ namespace testapi1.Migrations
                     b.HasIndex("NpcId");
 
                     b.HasIndex("PlayerId");
+
+                    b.HasIndex("SessionId", "OccurredAt");
 
                     b.ToTable("Interactions");
                 });
