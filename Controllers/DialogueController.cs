@@ -1,11 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using testapi1.Application;
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 using testapi1.Services;
 
 namespace testapi1.Controllers
 {
     [ApiController]
+    [ApiExplorerSettings(IgnoreApi = true)]
     [Route("api/v1/[controller]")]
     public class DialogueController : ControllerBase
     {

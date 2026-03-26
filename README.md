@@ -1,268 +1,383 @@
 # testapi1
 
-## Remote-first connectivity (Laptop 1 -> Laptop 2)
+ASP.NET Core backend for the interrogation prototype. This branch uses:
 
-This API now supports remote-first dependency targets for Redis, Qdrant, and Postgres, with manual fallback via environment variables.
+- Postgres for authoritative progression/session data
+- Qdrant for intent vectors
+- Redis for cache
+- ONNX embedding models from the repo `models/` folder
+- an optional localhost LLM endpoint, with app-level fallback if no model is configured yet
 
-- Redis cache path is controlled by `ConnectionStrings:Redis`.
-- Qdrant vector path remains `IVectorStore` (`VectorStore:Provider=Qdrant`) and is controlled by `Qdrant:BaseUrl`.
-- Postgres is connectivity-probe only in this phase, controlled by `ConnectionStrings:Postgres`.
-- A dependency probe endpoint is available at `GET /api/v1/infra/dependencies`.
-- In `Development`, a `.env` file in the repo root is auto-loaded at startup (without overriding already-set environment variables).
-- External dependency endpoints are env-first and validated at startup (`.env` or process environment variables).
-- Intent caching uses SHA-256 hashed cache keys (no raw normalized text in Redis key names).
-- LLM caching is intentionally disabled for now.
-- Redis runs with memory protection and eviction: `maxmemory=1gb`, `maxmemory-policy=allkeys-lru`.
+This README is the fastest path from a fresh clone to a working local setup.
 
-### Main API .env example (Laptop 1)
+The supported Unity-facing flow is now:
 
-Use `.env.example` as the template for remote-first settings and local fallback switch values.
-Required keys are:
-- `CONNECTIONSTRINGS__REDIS`
+- `POST /api/v1/progression/start` once when a session begins
+- `POST /api/v1/progression/clues/click` when the player discovers a clue
+- `POST /api/v1/progression/turn` for every entered text message
+
+Legacy helper endpoints such as `intent/classify`, `dialogue/normalise`, and `llm/generate` are still available for manual diagnostics, but they are no longer the supported client integration path.
+
+## Prerequisites
+
+Install these first:
+
+- .NET 8 SDK
+- Docker Desktop with `docker compose`
+- Python 3.10+ with `pip`
+- Git
+
+Optional but useful:
+
+- Postman
+- Ollama or another localhost LLM server, if you want to test the LLM path later
+
+## 1. Clone The Repo
+
+```powershell
+git clone <YOUR_REPO_URL>
+cd testapunity
+```
+
+## 2. Create Your Local `.env`
+
+Copy the example file:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Then open `.env` and set at least these values:
+
+- `POSTGRES_PASSWORD`
 - `CONNECTIONSTRINGS__POSTGRES`
-- `VECTORSTORE__PROVIDER` (must be `Qdrant`)
 - `QDRANT__BASEURL`
 - `QDRANT__COLLECTIONNAME`
 
-### Laptop 2 Docker .env example
+For the default local Docker setup in this repo, these values should work after you replace the password:
 
-Use `.env.laptop2.example` as the template for Docker Compose secrets/credentials on Laptop 2.
-
-## Redis container + API integration plan
-
-1. Keep Redis optional so the API can run even when the container is stopped.
-2. Use a resilient Redis connection string (`abortConnect=false`) so the API reconnects after Redis is started.
-3. Run Redis using the repo compose file (`docker-compose.yml`) for on-demand start/stop.
-4. Add a helper script (`scripts/redis-on-demand.sh`) for quick lifecycle control.
-5. Use `IRedisCacheStore` as the single Redis cache abstraction for app services.
-
-## Redis cache setup
-This API uses Redis for intent caching. Configure the connection string via
-`ConnectionStrings:Redis` and optionally set a key prefix with `Redis:InstanceName`.
-
-Current defaults are resilient to Redis being offline at API startup:
-
-```json
-"ConnectionStrings": {
-  "Redis": "localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000"
-}
+```env
+POSTGRES_PASSWORD=YOUR_POSTGRES_PASSWORD
+POSTGRES_DB=testgame
+POSTGRES_USER=postgres
+CONNECTIONSTRINGS__REDIS=localhost:6379,abortConnect=false,connectRetry=5,connectTimeout=5000,syncTimeout=5000
+CONNECTIONSTRINGS__POSTGRES=Host=localhost;Port=55432;Database=testgame;Username=postgres;Password=YOUR_POSTGRES_PASSWORD;Pooling=true;Timeout=5;Command Timeout=10
+VECTORSTORE__PROVIDER=Qdrant
+QDRANT__BASEURL=http://localhost:6333
+QDRANT__COLLECTIONNAME=intent-seed-poc
+QDRANT__APIKEY=
+REDIS__INSTANCENAME=testapi1:
+LLM__LOCAL__ENABLED=true
+LLM__LOCAL__BASEURL=http://localhost:11434
+LLM__LOCAL__MODEL=qwen2.5:3b
+LLM__LOCAL__TIMEOUTMS=120000
+LLM__LOCAL__SEED=17
+LLM__LOCAL__MAXRECENTEXCHANGES=4
+LLM__LOCAL__MAXLORESNIPPETS=3
+LLM__LOCAL__MAXTIMELINEITEMS=3
+LLM__LOCAL__MAXPUBLICSTORYCHARS=500
+LLM__LOCAL__MAXTRUTHSUMMARYCHARS=500
+LLM__LOCAL__MAXRELATIONSHIPMEMORYCHARS=200
+LLM__REMOTE__ENABLED=false
+LLM__REMOTE__BASEURL=https://api.openai.com/v1
+LLM__REMOTE__MODEL=
+LLM__REMOTE__APIKEY=
+LLM__REMOTE__TIMEOUTMS=60000
+LLM__GENERATION__MAXTOKENS=160
+LLM__GENERATION__TEMPERATURE=0.20
+REMOTECONNECTIVITY__TIMEOUTMS=2000
 ```
 
-## Run Redis on-demand with Docker Compose
+## 3. Install .NET And Python Dependencies
 
-### Start
-```bash
-./scripts/redis-on-demand.sh start
+Restore the local .NET tool manifest and NuGet packages:
+
+```powershell
+dotnet tool restore
+dotnet restore
 ```
 
-### Check status
-```bash
-./scripts/redis-on-demand.sh status
+Install the Python packages used by the seed scripts:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install psycopg2-binary numpy onnxruntime tokenizers
 ```
 
-### View logs
-```bash
-./scripts/redis-on-demand.sh logs
+If you prefer a virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install psycopg2-binary numpy onnxruntime tokenizers
 ```
 
-### Stop (keep data volume)
-```bash
-./scripts/redis-on-demand.sh stop
+## 4. Start Docker Dependencies
+
+Start Postgres, Redis, and Qdrant:
+
+```powershell
+docker compose up -d postgres redis qdrant
 ```
 
-### Remove container/network
-```bash
-./scripts/redis-on-demand.sh down
+Check that the containers are up:
+
+```powershell
+docker compose ps
 ```
 
-> Redis data is persisted in the `redis_data` Docker volume.
+The repo compose file exposes:
 
-## Exactly where the script is
+- Postgres on `localhost:55432`
+- Redis on `localhost:6379`
+- Qdrant on `localhost:6333`
 
-The script is in this repo at:
+## 5. Apply The Latest EF Core Migration
 
-- `scripts/redis-on-demand.sh`
+This repo already contains migrations. On a fresh clone you usually want to apply the latest migration, not create a new one:
 
-From the project root (`/workspace/testapunity`), run:
-
-```bash
-chmod +x ./scripts/redis-on-demand.sh
-./scripts/redis-on-demand.sh start
+```powershell
+dotnet tool run dotnet-ef database update
 ```
 
-If you are in a different folder, call it with an absolute path:
+Design-time EF commands read `CONNECTIONSTRINGS__POSTGRES` from your repo `.env`, so make sure it is set before running the command.
 
-```bash
-/workspace/testapunity/scripts/redis-on-demand.sh start
-```
+## 6. Seed Postgres
 
-## Docker Compose file (copy/paste)
+Seed the gameplay tables with the deterministic developer dataset:
 
-Redis service runs from `docker-compose.yml` in the project root:
-
-```yaml
-services:
-  redis:
-    image: redis:7-alpine
-    container_name: testapi1-redis
-    command:
-      [
-        "redis-server",
-        "--appendonly",
-        "yes",
-        "--maxmemory",
-        "${REDIS_MAXMEMORY:-1gb}",
-        "--maxmemory-policy",
-        "${REDIS_MAXMEMORY_POLICY:-allkeys-lru}"
-      ]
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  redis_data:
-```
-
-You can also run Docker Compose directly without the helper script:
-
-```bash
-docker compose -f docker-compose.yml up -d redis
-```
-
-## Redis cache abstraction
-The Redis cache abstraction is:
-
-- Interface: `Application/IRedisCacheStore.cs`
-- Implementation: `Services/Redis/DistributedCacheRedisStore.cs`
-
-Use this abstraction for Redis-backed features so behavior stays centralized (serialization, retry policy, key conventions, fallbacks).
-
-## ONNX Runtime integration (no Python runtime needed)
-
-This service is set up to load and run ONNX models directly in .NET using **Microsoft.ML.OnnxRuntime**. You only need to export your Python model to `.onnx`, drop it into the repo (or a mounted volume), and point the app to the file. The rest of the preprocessing and postprocessing stays in .NET.
-
-### 1) Configure the model path + I/O names
-
-Update `appsettings.json` (or environment variables) with your model location and tensor names:
-
-```json
-"Onnx": {
-  "ModelPath": "models/intent-classifier.onnx",
-  "InputNames": [ "input_ids" ],
-  "OutputNames": [ "logits" ]
-}
+```powershell
+python scripts/seed_postgres.py --force-reset
 ```
 
 Notes:
-- `ModelPath` can be relative to the app root or an absolute path.
-- `InputNames` and `OutputNames` should match the names shown by the exporter or a Netron model viewer.
 
-### 2) How inference is wired
+- This is destructive for the app tables listed in the script.
+- It resets and reseeds the developer dataset.
+- If you only want to preview what it will do:
 
-The API registers an `IOnnxModelRunner` service. This singleton loads the ONNX model the first time you call it and keeps the session warm for reuse.
+```powershell
+python scripts/seed_postgres.py --dry-run
+```
 
-Key points:
-- It accepts a dictionary of input tensors (so you control preprocessing).
-- It returns a dictionary of output tensors (so you control postprocessing).
-- It throws clear errors if the model path is missing or if outputs are not `float` tensors.
+## 7. Seed Qdrant Intent Vectors
 
-### 3) Minimal example (inside a service/controller)
+Seed the intent examples into Qdrant using the same tokenizer and ONNX embedding path that the app uses at runtime:
 
-```csharp
-var inputs = new Dictionary<string, Tensor<float>>
+```powershell
+python scripts/seed_qdrant_intents.py
+```
+
+Useful variants:
+
+```powershell
+python scripts/seed_qdrant_intents.py --dry-run
+python scripts/seed_qdrant_intents.py --model multiqa
+```
+
+What the script does:
+
+- reads Qdrant and embedding settings from `.env` and appsettings
+- loads `models/mpnet` or `models/multiqa` directly
+- ensures the Qdrant collection exists
+- seeds deterministic UUID intent points so reruns update instead of duplicating
+- runs a small similarity smoke check at the end
+
+## 8. Run The API
+
+The simplest launch profile is the HTTP profile:
+
+```powershell
+dotnet run --launch-profile http
+```
+
+That starts the API on:
+
+- `http://localhost:5000`
+
+Swagger is available at:
+
+- `http://localhost:5000/swagger`
+
+If you prefer the HTTPS profile:
+
+```powershell
+dotnet run --launch-profile https
+```
+
+That profile uses:
+
+- `https://localhost:7219`
+- `http://localhost:5263`
+
+## 9. Unity Client Flow
+
+Start the session once:
+
+```text
+POST /api/v1/progression/start
 {
-    ["input_ids"] = new DenseTensor<float>(inputIds, new[] { 1, inputIds.Length })
-};
-
-var outputs = await _onnxModelRunner.RunAsync(inputs, cancellationToken);
-var logits = outputs["logits"];
-```
-
-### 4) Preprocessing & postprocessing tips
-
-- **Preprocessing:** tokenization, padding, and any normalization should happen in .NET before you call `RunAsync`.
-- **Postprocessing:** softmax, argmax, thresholds, label mapping, etc. should also live in .NET.
-- **Model parity:** always compare outputs against your Python baseline to confirm identical behavior.
-
-### 5) GPU (optional later)
-
-If you want GPU acceleration, swap the runtime package to the GPU variant and update `SessionOptions` accordingly. Start with CPU first to validate correctness.
-
-## Intent classification POC (seeded cosine similarity)
-
-This project now supports a seeded intent classification proof-of-concept:
-
-- On startup, a hosted service embeds fixed seed utterances and upserts them into the configured `IVectorStore`.
-- The classifier embeds user text, runs top-k similarity search, and picks the highest-scoring intent.
-- A confidence threshold allows fallback to `unknown` for low-similarity queries.
-
-### Configuration
-
-```json
-"Embeddings": {
-  "Model": "mpnet",
-  "Models": {
-    "mpnet": {
-      "ModelPath": "models/mpnet/model.onnx",
-      "TokenizerPath": "models/mpnet/tokenizer.json",
-      "MaxLen": 384
-    },
-    "multiqa": {
-      "ModelPath": "models/multiqa/model.onnx",
-      "TokenizerPath": "models/multiqa/tokenizer.json",
-      "MaxLen": 384
-    }
-  }
-},
-"IntentClassification": {
-  "TopK": 3,
-  "MinConfidence": 0.45,
-  "IncludeDebugNotes": true
-},
-"VectorStore": {
-  "Provider": "InMemory"
-},
-"Qdrant": {
-  "BaseUrl": "https://your-qdrant-instance.cloud.qdrant.io",
-  "CollectionName": "intent-seed-poc",
-  "ApiKey": ""
+  "playerId": 1,
+  "caseId": "dylan-interrogation",
+  "npcId": "dylan"
 }
 ```
 
-Set `VectorStore:Provider` via environment variables and keep it as `Qdrant` for this env-first setup.
-For Qdrant API key, prefer environment variable `Qdrant__ApiKey` instead of committing secrets.
+Store the returned `sessionId` on the Unity side.
 
-### Embedding model selection
+When the player discovers a clue:
 
-- Active runtime model is selected by `Embeddings:Model` (`mpnet` or `multiqa`).
-- Model assets are loaded from the corresponding configured `ModelPath` + `TokenizerPath`.
-- Keep paths lowercase (`models/...`) to avoid Linux path casing issues.
-
-### Progression state machine API (backend authoritative)
-
-Progression endpoints:
-
-- `POST /api/v1/progression/start`
-- `POST /api/v1/progression/turn`
-- `GET /api/v1/progression/{sessionId}`
-
-The progression engine currently ships with one authored case graph (`dylan-interrogation`) and uses:
-
-- intent classification output (`ASK_TIMELINE`, `PRESENT_EVIDENCE`, etc.),
-- evidence detection from evidence-style turns (`E1`, `E2`, `E4`, `E5`, `E7`),
-- deterministic transition rules with terminal endings.
-
-Session state is stored in-memory with TTL configured by:
-
-```json
-"Progression": {
-  "SessionTtlMinutes": 120
+```text
+POST /api/v1/progression/clues/click
+{
+  "sessionId": "ps_<session_id>",
+  "clueId": "elsa_email_draft",
+  "source": "desk"
 }
 ```
+
+When the player submits a chat message:
+
+```text
+POST /api/v1/progression/turn
+{
+  "sessionId": "ps_<session_id>",
+  "text": "Talk to me about Elsa's email.",
+  "contextKey": "",
+  "discussedClueIds": ["elsa_email_draft"]
+}
+```
+
+`progression/turn` now performs the full chat pipeline in one call:
+
+- normalize text
+- classify intent once
+- update progression state
+- generate the NPC reply
+- return both `replyText` and the updated `snapshot`
+
+## 10. Optional Verification
+
+Check the dependency probe:
+
+```text
+GET /api/v1/infra/dependencies
+```
+
+Run tests:
+
+```powershell
+dotnet test .\testapi1.Tests\testapi1.Tests.csproj -v minimal
+```
+
+## 11. Local LLM Status
+
+The backend already supports a localhost-first LLM configuration through these env keys:
+
+- `LLM__LOCAL__ENABLED`
+- `LLM__LOCAL__BASEURL`
+- `LLM__LOCAL__MODEL`
+- `LLM__LOCAL__SEED`
+
+For same-machine Ollama bring-up:
+
+```powershell
+ollama list
+curl http://localhost:11434/v1/models
+```
+
+Recommended local env values:
+
+```env
+LLM__LOCAL__ENABLED=true
+LLM__LOCAL__BASEURL=http://localhost:11434
+LLM__LOCAL__MODEL=qwen2.5:3b
+LLM__LOCAL__TIMEOUTMS=120000
+LLM__LOCAL__SEED=17
+LLM__GENERATION__MAXTOKENS=160
+LLM__GENERATION__TEMPERATURE=0.20
+```
+
+The dependency probe now includes Ollama as a separate check and validates that the configured local model appears in `GET /v1/models`.
+
+Later, if you move Ollama to a second laptop, only change:
+
+```env
+LLM__LOCAL__BASEURL=http://<second-laptop-ip>:11434
+```
+
+## Common Commands
+
+Start dependencies:
+
+```powershell
+docker compose up -d postgres redis qdrant
+```
+
+Stop dependencies:
+
+```powershell
+docker compose down
+```
+
+Apply latest migration:
+
+```powershell
+dotnet tool run dotnet-ef database update
+```
+
+Seed Postgres:
+
+```powershell
+python scripts/seed_postgres.py --force-reset
+```
+
+Seed Qdrant:
+
+```powershell
+python scripts/seed_qdrant_intents.py
+```
+
+Run API:
+
+```powershell
+dotnet run --launch-profile http
+```
+
+Run tests:
+
+```powershell
+dotnet test .\testapi1.Tests\testapi1.Tests.csproj -v minimal
+```
+
+## Troubleshooting
+
+If `docker compose up` fails for Postgres:
+
+- make sure `.env` contains `POSTGRES_PASSWORD`
+
+If `dotnet-ef database update` says the Postgres connection string is missing:
+
+- make sure `.env` contains `CONNECTIONSTRINGS__POSTGRES`
+
+If `seed_postgres.py` fails:
+
+- confirm Postgres is running on `localhost:55432`
+- confirm the password in `CONNECTIONSTRINGS__POSTGRES` matches `POSTGRES_PASSWORD`
+- confirm `psycopg2-binary` is installed
+
+If `seed_qdrant_intents.py` fails:
+
+- confirm Qdrant is running on `localhost:6333`
+- confirm `numpy`, `onnxruntime`, and `tokenizers` are installed
+- confirm the embedding model files exist under `models/mpnet` or `models/multiqa`
+
+If the API starts but intent classification does not behave correctly:
+
+- make sure Qdrant has been seeded
+- make sure `VECTORSTORE__PROVIDER=Qdrant`
+
+If Postman or the browser gives HTTPS certificate issues:
+
+- use the `http` profile and `http://localhost:5000`

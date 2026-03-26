@@ -1,5 +1,34 @@
 namespace testapi1.Domain.Progression
 {
+    public enum ClueId
+    {
+        ElsaEmailDraft = 1,
+        PayrollReport = 2,
+        MeetingNote = 3,
+        EntryLog = 4,
+        PinNote = 5,
+        CleanupItem = 6,
+        LockedSuitcaseOpened = 7,
+        WeaponFound = 8,
+        FlashDrive = 9
+    }
+
+    public enum ComposureState
+    {
+        Calm = 0,
+        Guarded = 1,
+        Defensive = 2,
+        Cracking = 3,
+        Broken = 4
+    }
+
+    public enum ProofTier
+    {
+        None = 0,
+        Minimum = 1,
+        Full = 2
+    }
+
     public enum ProgressionStateId
     {
         Intro = 0,
@@ -60,8 +89,16 @@ namespace testapi1.Domain.Progression
         string Reason,
         DateTimeOffset OccurredAtUtc);
 
+    public sealed record ClueClickHistoryEntry(
+        ClueId ClueId,
+        bool IsFirstDiscovery,
+        string Source,
+        string ClueName,
+        DateTimeOffset OccurredAtUtc);
+
     public sealed record ProgressionSessionState(
         string SessionId,
+        int PlayerId,
         string CaseId,
         string NpcId,
         ProgressionStateId State,
@@ -71,6 +108,12 @@ namespace testapi1.Domain.Progression
         bool IsTerminal,
         CaseEndingType Ending,
         IReadOnlyCollection<EvidenceId> PresentedEvidence,
+        IReadOnlyCollection<ClueId> DiscoveredClues,
+        IReadOnlyCollection<ClueId> DiscussedClues,
+        IReadOnlyList<ClueClickHistoryEntry> ClueClickHistory,
+        ComposureState ComposureState,
+        ProofTier ProofTier,
+        bool CanConfess,
         IReadOnlyList<ProgressionHistoryEntry> History,
         string LastTransitionReason,
         DateTimeOffset CreatedAtUtc,

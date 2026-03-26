@@ -6,7 +6,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using testapi1.Application;
-using testapi1.Contracts;
+using testapi1.ApiContracts;
 
 namespace testapi1.Services.Caching
 {

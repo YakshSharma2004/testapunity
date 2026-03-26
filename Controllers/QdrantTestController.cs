@@ -6,6 +6,7 @@ using testapi1.Infrastructure.VectorStores;
 namespace testapi1.Controllers
 {
     [ApiController]
+    [ApiExplorerSettings(IgnoreApi = true)]
     [Route("qdrant-test")]
     public class QdrantTestController : ControllerBase
     {

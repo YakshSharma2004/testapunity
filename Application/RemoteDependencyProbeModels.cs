@@ -5,7 +5,9 @@ namespace testapi1.Application
         string Target,
         bool Healthy,
         string Message,
-        long DurationMs);
+        long DurationMs,
+        string? ConfiguredModel = null,
+        bool? ModelAvailable = null);
 
     public sealed record RemoteDependencyProbeReport(
         DateTimeOffset CheckedAtUtc,
