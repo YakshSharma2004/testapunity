@@ -1,0 +1,15 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineDeployment.schema.json
+name: blue
+endpoint_name: testapi1-llm-staging
+model: azureml:testapi1-dialogue-staging@latest
+code_configuration:
+  code: ../scoring/openai_compat
+  scoring_script: score.py
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+instance_type: Standard_NC4as_T4_v3
+instance_count: 1
+request_settings:
+  request_timeout_ms: 90000
+environment_variables:
+  MODEL_NAME: dylan-dialogue-staging
+  RESPONSE_SHAPE: openai-chat-completions

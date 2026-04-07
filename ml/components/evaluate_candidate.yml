@@ -1,0 +1,22 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_evaluate_candidate
+display_name: testapi1 evaluate candidate
+version: 0.1.0
+description: >
+  Starter template for candidate evaluation. Production logic should compare the
+  candidate against the current production model on quality, safety, and latency.
+inputs:
+  candidate_model:
+    type: uri_folder
+  test_dataset:
+    type: uri_folder
+  baseline_model_name:
+    type: string
+outputs:
+  evaluation_report:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; out = Path(r'${{outputs.evaluation_report}}'); out.mkdir(parents=True, exist_ok=True); (out / 'metrics.json').write_text('{\"status\": \"starter-template\", \"baseline_model\": \"${{inputs.baseline_model_name}}\", \"approved_for_staging\": false}'); print('evaluate_candidate starter template executed')"

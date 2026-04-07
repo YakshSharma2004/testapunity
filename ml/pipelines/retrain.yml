@@ -1,0 +1,59 @@
+$schema: https://azuremlschemas.azureedge.net/latest/pipelineJob.schema.json
+type: pipeline
+display_name: testapi1 weekly retrain
+description: >
+  Starter Azure ML retraining pipeline for the production deployment target.
+settings:
+  default_compute: azureml:cpu-orchestrator
+inputs:
+  raw_logs_uri:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/retraining/raw-logs/
+  qa_transcripts_uri:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/retraining/qa-transcripts/
+  authored_examples_uri:
+    type: uri_folder
+    path: azureml://datastores/workspaceblobstore/paths/retraining/authored-examples/
+  baseline_model_name:
+    type: string
+    default: dylan-dialogue-prod
+jobs:
+  ingest:
+    type: command
+    component: ../components/data_ingest.yml
+    inputs:
+      raw_logs_uri: ${{parent.inputs.raw_logs_uri}}
+      qa_transcripts_uri: ${{parent.inputs.qa_transcripts_uri}}
+      authored_examples_uri: ${{parent.inputs.authored_examples_uri}}
+  sanitize:
+    type: command
+    component: ../components/data_sanitize.yml
+    inputs:
+      merged_dataset: ${{parent.jobs.ingest.outputs.merged_dataset}}
+  curate:
+    type: command
+    component: ../components/dataset_curate.yml
+    inputs:
+      sanitized_dataset: ${{parent.jobs.sanitize.outputs.sanitized_dataset}}
+  fine_tune:
+    type: command
+    component: ../components/fine_tune.yml
+    compute: azureml:gpu-train-cluster
+    inputs:
+      train_dataset: ${{parent.jobs.curate.outputs.train_dataset}}
+      validation_dataset: ${{parent.jobs.curate.outputs.validation_dataset}}
+      base_model_name: ${{parent.inputs.baseline_model_name}}
+  evaluate:
+    type: command
+    component: ../components/evaluate_candidate.yml
+    inputs:
+      candidate_model: ${{parent.jobs.fine_tune.outputs.candidate_model}}
+      test_dataset: ${{parent.jobs.curate.outputs.test_dataset}}
+      baseline_model_name: ${{parent.inputs.baseline_model_name}}
+  register_candidate:
+    type: command
+    component: ../components/register_approved_model.yml
+    inputs:
+      candidate_model: ${{parent.jobs.fine_tune.outputs.candidate_model}}
+      evaluation_report: ${{parent.jobs.evaluate.outputs.evaluation_report}}

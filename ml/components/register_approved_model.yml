@@ -1,0 +1,20 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_register_approved_model
+display_name: testapi1 register approved model
+version: 0.1.0
+description: >
+  Starter template for model registration. Production logic should enforce the
+  approval gate and prepare the bundle that is promoted into the registry.
+inputs:
+  candidate_model:
+    type: uri_folder
+  evaluation_report:
+    type: uri_folder
+outputs:
+  registration_bundle:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; out = Path(r'${{outputs.registration_bundle}}'); out.mkdir(parents=True, exist_ok=True); (out / 'README.txt').write_text('Starter template only. Replace with production model registry promotion logic.'); print('register_approved_model starter template executed')"

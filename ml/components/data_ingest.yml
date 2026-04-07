@@ -1,0 +1,22 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_data_ingest
+display_name: testapi1 data ingest
+version: 0.1.0
+description: >
+  Starter template for the production ingestion job. Replace the placeholder logic
+  with the implemented data collection and merge step before enabling schedules.
+inputs:
+  raw_logs_uri:
+    type: uri_folder
+  qa_transcripts_uri:
+    type: uri_folder
+  authored_examples_uri:
+    type: uri_folder
+outputs:
+  merged_dataset:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; out = Path(r'${{outputs.merged_dataset}}'); out.mkdir(parents=True, exist_ok=True); (out / 'README.txt').write_text('Starter template only. Replace ml/components/data_ingest.yml with the production ingest job.'); print('data_ingest starter template executed')"
