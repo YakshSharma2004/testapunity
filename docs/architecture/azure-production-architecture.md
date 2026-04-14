@@ -25,8 +25,8 @@ flowchart LR
 | PostgreSQL | Authoritative progression and runtime persistence |
 | Redis | Shared cache for multi-instance deployments |
 | Qdrant Cloud | Semantic retrieval and vector-backed intent context |
-| LLM compatibility gateway | Keeps the API's current OpenAI-style request/response contract stable |
-| Azure ML online endpoint | Runs the fine-tuned model on GPU-backed managed compute |
+| LLM compatibility gateway | Keeps the API's current OpenAI-style request/response contract stable while routing to our hosted model |
+| Azure ML online endpoint | Runs our fine-tuned dialogue LLM on GPU-backed managed compute |
 
 ## Offline Fine-Tuning And Promotion Flow
 

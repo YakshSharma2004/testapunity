@@ -52,8 +52,8 @@ Related repo artifacts:
 | ML platform | Azure Machine Learning Workspace | Central control plane for training, experiments, deployments, and schedules | Native Azure integration for model lifecycle management |
 | GPU training compute | Azure ML compute clusters | Runs fine-tuning and heavy evaluation jobs | Supports burst GPU workloads without always-on VM cost |
 | Model registry | Azure ML registry | Versions models, components, and environments across environments | Clean promotion path from `dev` to `staging` to `prod` |
-| GPU inference | Azure ML managed online endpoint | Hosts the approved dialogue model for real-time inference | Production-grade managed GPU serving |
-| LLM compatibility layer | Azure Function or API Management-backed gateway | Exposes an OpenAI-compatible `/v1/chat/completions` route for the current API client | Preserves the app's existing `LlmService` contract while the model runs in Azure ML |
+| GPU inference | Azure ML managed online endpoint | Hosts our fine-tuned dialogue LLM on Azure GPU compute for real-time inference | Production-grade managed GPU serving for a model we deploy and control |
+| LLM compatibility layer | Azure Function or API Management-backed gateway | Exposes an OpenAI-compatible `/v1/chat/completions` route in front of our hosted AML model | Preserves the app's existing `LlmService` contract while the model runs on our Azure ML GPU infrastructure |
 | Secrets | Azure Key Vault | Stores secrets, keys, connection strings, and endpoint credentials | Keeps secrets out of source control and App Service files |
 | Observability | Application Insights, Azure Monitor, Log Analytics | Collects application logs, endpoint metrics, and alerting signals | Standard Azure monitoring stack for app plus ML workloads |
 
@@ -62,8 +62,8 @@ Related repo artifacts:
 1. The Unity client sends requests to the ASP.NET Core API hosted on Azure App Service.
 2. The API validates the request, reads or writes progression data in Azure Database for PostgreSQL, and uses Azure Managed Redis for cache-backed lookups.
 3. The API queries Qdrant Cloud for semantic retrieval data when retrieval is required.
-4. The API builds the final dialogue prompt and sends it to the LLM compatibility gateway.
-5. The gateway forwards the request to the Azure ML managed online endpoint running the fine-tuned model on GPU compute.
+4. The API builds the final dialogue prompt and sends it to the internal LLM compatibility gateway.
+5. The gateway forwards the request to our Azure ML managed online endpoint, where the fine-tuned dialogue LLM is hosted on GPU compute.
 6. The model response is returned to the API in an OpenAI-compatible format, then returned to the client.
 
 ### 1.4 Offline ML Flow
@@ -83,7 +83,7 @@ Related repo artifacts:
 - **Azure Managed Redis instead of in-memory only**: the code supports an in-memory fallback, but production scale-out requires a shared cache to avoid inconsistent results across instances.
 - **Qdrant Cloud instead of replacing the vector layer**: this keeps the production plan aligned with the current code and avoids rewriting retrieval logic.
 - **Azure ML instead of raw GPU VMs for the full AI lifecycle**: one platform can own fine-tuning jobs, experiment tracking, endpoint deployment, scheduling, and model registration.
-- **A small compatibility gateway in front of Azure ML inference**: the current app expects an OpenAI-style `/v1/chat/completions` interface. A thin adapter avoids invasive application changes while still keeping Azure ML as the actual GPU inference host.
+- **A small compatibility gateway in front of Azure ML inference**: the current app expects an OpenAI-style `/v1/chat/completions` interface. A thin adapter avoids invasive application changes while still keeping the actual LLM hosted by us on Azure ML GPU infrastructure.
 
 ## 2. Environment Configuration
 
@@ -142,7 +142,7 @@ The API should keep secrets in Key Vault and surface them to App Service as appl
 | `VECTORSTORE__PROVIDER` | App Service setting | Set to `Qdrant` |
 | `LLM__LOCAL__ENABLED` | App Service setting | Set to `false` in production |
 | `LLM__REMOTE__ENABLED` | App Service setting | Set to `true` in production |
-| `LLM__REMOTE__BASEURL` | App Service setting | Points to the compatibility gateway base URL |
+| `LLM__REMOTE__BASEURL` | App Service setting | Points to the internal compatibility gateway that fronts our hosted GPU LLM |
 | `LLM__REMOTE__MODEL` | App Service setting | Example: `dylan-dialogue-prod` |
 | `LLM__REMOTE__APIKEY` | Key Vault secret | Gateway or endpoint credential if required |
 | `REMOTECONNECTIVITY__TIMEOUTMS` | App Service setting | Timeout for dependency checks |
@@ -155,7 +155,7 @@ The API should keep secrets in Key Vault and surface them to App Service as appl
 | Postgres | Docker container on port `55432` | Azure Database for PostgreSQL Flexible Server |
 | Redis | Docker container on port `6379` | Azure Managed Redis |
 | Qdrant | Local Docker container | Qdrant Cloud |
-| LLM host | Local Ollama or other localhost endpoint | Azure ML managed online endpoint on GPU behind a compatibility gateway |
+| LLM host | Local Ollama or other localhost endpoint | Our fine-tuned LLM hosted on Azure ML managed online endpoint GPU compute behind a compatibility gateway |
 | Secrets | `.env` file | Azure Key Vault + App Service settings |
 | Logs | Local rolling file logs | App Service logs + Application Insights + Log Analytics |
 | Model lifecycle | Manual local testing | Azure ML pipeline, registry, staging, and controlled promotion |
