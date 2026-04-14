@@ -213,6 +213,26 @@ That profile uses:
 
 ## 9. Unity Client Flow
 
+In the Unity project, click the manager object that holds the `BackendApiClient` script. In the Inspector, set the `Base URL` field to the backend address you want Unity to call.
+
+Examples:
+
+- same laptop as Unity: `http://localhost:5000`
+- different laptop on the same network: `http://<backend-laptop-ip>:5000`
+- public tunnel URL: `https://<your-tunnel-host>`
+
+Keep the endpoint paths on that same manager pointed at:
+
+- `/api/v1/progression/start`
+- `/api/v1/progression/clues/click`
+- `/api/v1/progression/turn`
+
+The backend does not need to run on the same machine as Unity. It can run on a separate laptop as long as the Unity laptop can reach that backend laptop over the network.
+
+If the backend is on a different network and direct routing is not possible, you can expose it with a tunnel such as `cloudflared` or `ngrok` and then place that tunnel URL into the Unity `Base URL` field.
+
+Before using a tunnel, also check firewall and network rules on the backend machine and network. Those rules can block or interfere with redirected requests, including requests going through `cloudflared`, so they should be verified before setup.
+
 Start the session once:
 
 ```text
@@ -381,3 +401,11 @@ If the API starts but intent classification does not behave correctly:
 If Postman or the browser gives HTTPS certificate issues:
 
 - use the `http` profile and `http://localhost:5000`
+
+If Unity cannot reach a backend on another laptop:
+
+- confirm the Unity laptop can reach the backend laptop IP and port
+- confirm the backend is listening on the address you expect
+- confirm local firewall rules allow inbound traffic to the backend port
+- if using `cloudflared` or `ngrok`, confirm the tunnel is active and use the tunnel URL as the Unity `Base URL`
+- if using a tunnel and requests still fail, review firewall and network rules first because they may block redirected traffic
