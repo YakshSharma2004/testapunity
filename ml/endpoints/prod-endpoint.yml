@@ -1,0 +1,11 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+name: testapi1-llm-prod
+auth_mode: key
+location: eastus
+description: >
+  Production GPU endpoint for the approved fine-tuned dialogue model.
+tags:
+  app: testapi1
+  environment: prod
+  workload: npc-dialogue
+  rollout: blue-green

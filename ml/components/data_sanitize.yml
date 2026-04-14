@@ -1,0 +1,18 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_data_sanitize
+display_name: testapi1 data sanitize
+version: 0.1.0
+description: >
+  Starter template for transcript sanitization. Production code should remove PII,
+  normalize records, reject malformed samples, and preserve audit lineage.
+inputs:
+  merged_dataset:
+    type: uri_folder
+outputs:
+  sanitized_dataset:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; out = Path(r'${{outputs.sanitized_dataset}}'); out.mkdir(parents=True, exist_ok=True); (out / 'README.txt').write_text('Starter template only. Replace ml/components/data_sanitize.yml with production sanitization logic.'); print('data_sanitize starter template executed')"

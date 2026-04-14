@@ -1,0 +1,19 @@
+$schema: https://azuremlschemas.azureedge.net/latest/schedule.schema.json
+name: testapi1-weekly-retrain
+display_name: testapi1 weekly retrain
+description: >
+  Weekly retraining schedule for the production AML pipeline. Keep this disabled
+  until the pipeline has passed at least one successful manual run and staging test.
+trigger:
+  type: recurrence
+  frequency: week
+  interval: 1
+  schedule:
+    week_days:
+      - monday
+    hours:
+      - 3
+    minutes:
+      - 0
+create_job:
+  job: ./retrain.yml

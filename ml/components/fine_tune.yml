@@ -1,0 +1,24 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_fine_tune
+display_name: testapi1 fine tune
+version: 0.1.0
+description: >
+  Starter template for the GPU fine-tuning job. Production code should launch the
+  real training entrypoint, log metrics, and export the candidate model package.
+inputs:
+  train_dataset:
+    type: uri_folder
+  validation_dataset:
+    type: uri_folder
+  base_model_name:
+    type: string
+outputs:
+  candidate_model:
+    type: uri_folder
+  training_metadata:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; model = Path(r'${{outputs.candidate_model}}'); meta = Path(r'${{outputs.training_metadata}}'); model.mkdir(parents=True, exist_ok=True); meta.mkdir(parents=True, exist_ok=True); (model / 'README.txt').write_text('Starter candidate model output. Replace with real fine-tuned model artifacts.'); (meta / 'training-summary.json').write_text('{\"status\": \"starter-template\", \"base_model\": \"${{inputs.base_model_name}}\"}'); print('fine_tune starter template executed')"

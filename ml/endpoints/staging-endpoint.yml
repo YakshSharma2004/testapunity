@@ -1,0 +1,11 @@
+$schema: https://azuremlschemas.azureedge.net/latest/managedOnlineEndpoint.schema.json
+name: testapi1-llm-staging
+auth_mode: key
+location: eastus
+description: >
+  Staging GPU endpoint for smoke-testing fine-tuned dialogue models before
+  human approval and production rollout.
+tags:
+  app: testapi1
+  environment: staging
+  workload: npc-dialogue

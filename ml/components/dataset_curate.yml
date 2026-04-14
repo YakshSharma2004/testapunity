@@ -1,0 +1,22 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandComponent.schema.json
+type: command
+name: testapi1_dataset_curate
+display_name: testapi1 dataset curate
+version: 0.1.0
+description: >
+  Starter template for dataset curation. Production code should produce versioned
+  train, validation, and test assets for fine-tuning and regression checks.
+inputs:
+  sanitized_dataset:
+    type: uri_folder
+outputs:
+  train_dataset:
+    type: uri_folder
+  validation_dataset:
+    type: uri_folder
+  test_dataset:
+    type: uri_folder
+code: .
+environment: azureml://registries/azureml/environments/python-sdk-v2/labels/latest
+command: >-
+  python -c "from pathlib import Path; train = Path(r'${{outputs.train_dataset}}'); val = Path(r'${{outputs.validation_dataset}}'); test = Path(r'${{outputs.test_dataset}}'); [p.mkdir(parents=True, exist_ok=True) for p in (train, val, test)]; (train / 'README.txt').write_text('Starter train dataset output.'); (val / 'README.txt').write_text('Starter validation dataset output.'); (test / 'README.txt').write_text('Starter test dataset output.'); print('dataset_curate starter template executed')"
